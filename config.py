@@ -77,6 +77,11 @@ FIGURE_SIZE = (15, 10)  # Size of visualization plots
 METRICS_DIR = OUTPUT_DIR / "metrics"
 os.makedirs(METRICS_DIR, exist_ok=True)
 
+# Model train settings
+MODEL = 'yolov8n.pt'
+N_EPOCHS = 100
+BATCH = 16
+
 # Performance evaluation
 IOU_THRESHOLD = 0.5  # Intersection over Union threshold for object detection
 CONFIDENCE_THRESHOLD = 0.25  # Confidence threshold for predictions
