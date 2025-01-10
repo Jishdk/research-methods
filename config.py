@@ -60,5 +60,31 @@ CATEGORY_MAPPING = {
     'Unlabeled litter': 'trash'
 }
 
+# Google Colab detection
+try:
+    from google.colab import drive
+    IN_COLAB = True
+    COLAB_ROOT = "collab path"
+    CODE_DIR = Path(COLAB_ROOT)
+except ImportError:
+    IN_COLAB = False
+
+# Visualization settings
+SAMPLE_IMAGES_PER_CLASS = 2  # Number of sample images to visualize per class
+FIGURE_SIZE = (15, 10)  # Size of visualization plots
+
+# Metrics settings
+METRICS_DIR = OUTPUT_DIR / "metrics"
+os.makedirs(METRICS_DIR, exist_ok=True)
+
+# Model train settings
+MODEL = 'yolov8n.pt'
+N_EPOCHS = 100
+BATCH = 16
+
+# Performance evaluation
+IOU_THRESHOLD = 0.5  # Intersection over Union threshold for object detection
+CONFIDENCE_THRESHOLD = 0.25  # Confidence threshold for predictions
+
 # Create required directories
 os.makedirs(OUTPUT_DIR, exist_ok=True)

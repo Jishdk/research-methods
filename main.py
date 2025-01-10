@@ -1,19 +1,42 @@
+# main.py
 import logging
 from pathlib import Path
-from config import OUTPUT_DIR
+import sys
+from config import OUTPUT_DIR, IN_COLAB
 from preprocessing import DatasetPreprocessor
-from utils import setup_logging
-
+from utils import setup_logging, visualize_sample_images
 
 ## Logger set up
 logger = setup_logging()
 
+## Colab set up
+def setup_colab_env():
+    """Setup Google Colab environment if needed"""
+    try:
+        from google.colab import drive
+        from IPython import get_ipython
+        
+        # Check if running in Colab
+        if "google.colab" in str(get_ipython()):
+            print("Running in Google Colab. Mounting Drive...")
+            drive.mount('/content/drive')
+        else:
+            print("Not running in Google Colab. Skipping drive.mount().")
+    except ModuleNotFoundError:
+        print("Google Colab module not found. Skipping drive.mount().")
+
 def main():
     """Main preprocessing pipeline"""
     try:
+        # Setup environment
+        setup_colab_env()
+        
         # Initialize preprocessor
         logger.info("Initializing data preprocessor...")
         preprocessor = DatasetPreprocessor()
+        
+        # Visualize sample images from both datasets
+        visualize_sample_images(preprocessor)
         
         # Process TrashNet dataset
         logger.info("Processing TrashNet dataset...")
