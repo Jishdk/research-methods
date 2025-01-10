@@ -15,7 +15,9 @@ def setup_colab_env():
     try:
         from google.colab import drive
         from IPython import get_ipython
-        if get_ipython() and hasattr(get_ipython(), 'kernel'):
+        
+        # Check if running in Colab
+        if "google.colab" in str(get_ipython()):
             print("Running in Google Colab. Mounting Drive...")
             drive.mount('/content/drive')
         else:
