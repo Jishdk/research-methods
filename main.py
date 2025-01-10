@@ -11,16 +11,15 @@ logger = setup_logging()
 
 ## Colab set up
 def setup_colab_env():
-    try:
-        from google.colab import drive
-        from IPython import get_ipython
-        if get_ipython() and hasattr(get_ipython(), 'kernel'):
-            print("Running in Google Colab. Mounting Drive...")
+    """Setup Google Colab environment if needed"""
+    if IN_COLAB:
+        logger.info("Setting up Google Colab environment...")
+        # Add any Colab-specific setup here
+        try:
+            from google.colab import drive
             drive.mount('/content/drive')
-        else:
-            print("Not running in Google Colab. Skipping drive.mount().")
-    except ModuleNotFoundError:
-        print("Google Colab module not found. Skipping drive.mount().")
+        except ImportError:
+            logger.warning("Not running in Colab environment")
 
 def main():
     """Main preprocessing pipeline"""
