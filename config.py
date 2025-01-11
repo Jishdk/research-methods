@@ -61,15 +61,14 @@ CATEGORY_MAPPING = {
 }
 
 # Google Colab detection
-#try:
-#    from google.colab import drive
-#    IN_COLAB = True
-#    COLAB_ROOT = "collab path"
+try:
+    from google.colab import drive
+    IN_COLAB = True
+    COLAB_ROOT = "collab path"
 #    CODE_DIR = Path(COLAB_ROOT)
-#except ImportError:
-#    IN_COLAB = False
+except ImportError:
+    IN_COLAB = False
 
-IN_COLAB = False
 
 # Visualization settings
 SAMPLE_IMAGES_PER_CLASS = 2  # Number of sample images to visualize per class
