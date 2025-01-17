@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 
 # Get directory containing the script
-CODE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+CODE_DIR = os.path.dirname(os.path.abspath(__file__))
+COD_DIR  = Path(CODE_DIR)
 
 # Define paths relative to code directory
 DATA_DIR = CODE_DIR / "data"
