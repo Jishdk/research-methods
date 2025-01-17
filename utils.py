@@ -1,11 +1,9 @@
-# utils.py
 import cv2
 import numpy as np
 import pandas as pd
 import yaml
 import json
 import logging
-import random
 import shutil
 from datetime import datetime
 import matplotlib.pyplot as plt
@@ -64,68 +62,9 @@ def normalize_image(image: np.ndarray, mean: List[float], std: List[float]) -> n
     """Normalize image using provided mean and std"""
     return ((image.astype(np.float32) / 255.0) - np.array(mean)) / np.array(std)
 
-### Data Augmentation ###
-def rotate_box(box_params: Tuple[float, float, float, float], 
-              angle: float, image_dims: Tuple[int, int]) -> Tuple[float, float, float, float]:
-    """Rotate bounding box coordinates"""
-    x_center, y_center, width, height = box_params
-    image_width, image_height = image_dims
-    
-    # Convert to pixel coordinates
-    x = x_center * image_width
-    y = y_center * image_height
-    
-    # Rotate around image center
-    angle_rad = np.radians(angle)
-    cx, cy = image_width / 2, image_height / 2
-    
-    x_shifted = x - cx
-    y_shifted = y - cy
-    
-    new_x = cx + (x_shifted * np.cos(angle_rad) - y_shifted * np.sin(angle_rad))
-    new_y = cy + (x_shifted * np.sin(angle_rad) + y_shifted * np.cos(angle_rad))
-    
-    # Convert back to normalized coordinates
-    return (new_x / image_width, new_y / image_height, width, height)
-
-def augment_image_and_label(image: np.ndarray, label: str) -> Tuple[np.ndarray, str]:
-    """Apply augmentation to image and its label according to proposal specifications"""
-    # Parse label
-    parts = label.strip().split()
-    class_id = int(parts[0])
-    box_params = tuple(map(float, parts[1:]))
-    
-    # Apply augmentations from config
-    angle = random.uniform(*AUGMENTATION_CONFIG['rotation_range'])
-    
-    # Rotate image and box
-    matrix = cv2.getRotationMatrix2D((image.shape[1]/2, image.shape[0]/2), angle, 1.0)
-    image = cv2.warpAffine(image, matrix, (image.shape[1], image.shape[0]))
-    new_box = rotate_box(box_params, angle, (image.shape[1], image.shape[0]))
-    
-    # Apply additional augmentations
-    if AUGMENTATION_CONFIG['flip_horizontal'] and random.random() > 0.5:
-        image = cv2.flip(image, 1)
-        new_box = (1 - new_box[0], new_box[1], new_box[2], new_box[3])
-        
-    if AUGMENTATION_CONFIG['flip_vertical'] and random.random() > 0.5:
-        image = cv2.flip(image, 0)
-        new_box = (new_box[0], 1 - new_box[1], new_box[2], new_box[3])
-    
-    # Apply color jittering
-    jitter = AUGMENTATION_CONFIG['color_jitter']
-    alpha = random.uniform(*jitter['brightness'])
-    beta = random.uniform(-30, 30)  # Contrast adjustment
-    image = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
-    
-    # Create new label string
-    new_label = f"{class_id} {' '.join(f'{x:.6f}' for x in new_box)}\n"
-    return image, new_label
-
 ### File Processing ###
 def process_split_files(files: List[Tuple[str, np.ndarray]], labels: List[str], 
-                       split_dir: Path, img_size: int, 
-                       mean: List[float], std: List[float]) -> None:
+                       split_dir: Path, img_size: int) -> None:
     """Process and save image files with labels"""
     images_dir = split_dir / "images"
     labels_dir = split_dir / "labels"
@@ -168,7 +107,7 @@ def count_images_per_class(labels_dir: Path) -> Dict[int, int]:
             logger.error(f"Error reading label file {label_file}: {e}")
     return class_counts
 
-def save_dataset_metadata(dataset_dir: Path, dataset_type: str) -> None:
+def save_dataset_metadata(dataset_dir: Path) -> None:
     """Save comprehensive dataset statistics"""
     metadata = {
         'total_images': 0,
@@ -185,23 +124,23 @@ def save_dataset_metadata(dataset_dir: Path, dataset_type: str) -> None:
         }
         metadata['total_images'] += n_images
     
-    output_file = dataset_dir / f"{dataset_type}_metadata.json"
+    output_file = dataset_dir / "metadata.json"
     with open(output_file, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-def log_dataset_stats(dataset_dir: Path, dataset_type: str) -> None:
+def log_dataset_stats(dataset_dir: Path) -> None:
     """Log basic dataset statistics"""
     stats = {split: len(list((dataset_dir / split / "images").glob("*.jpg")))
             for split in ["train", "val", "test"]}
     
     total_images = sum(stats.values())
-    logger.info(f"{dataset_type} dataset processed:")
+    logger.info("TrashNet dataset processed:")
     logger.info(f"Total images: {total_images}")
     for split, count in stats.items():
         logger.info(f"{split} split: {count} images")
 
 ### Cross Validation ###
-def create_cross_validation_folds(dataset_dir: Path, dataset_type: str, cv_folds: int) -> None:
+def create_cross_validation_folds(dataset_dir: Path, cv_folds: int) -> None:
     """Create k-fold cross-validation splits"""
     cv_dir = dataset_dir / "cv_splits"
     cv_dir.mkdir(parents=True, exist_ok=True)
@@ -252,8 +191,8 @@ def create_cross_validation_folds(dataset_dir: Path, dataset_type: str, cv_folds
             'path': str(fold_dir.absolute()),
             'train': 'train/images',
             'val': 'val/images',
-            'nc': len(TRASHNET_CLASSES if dataset_type == 'trashnet' else TACO_CLASSES),
-            'names': TRASHNET_CLASSES if dataset_type == 'trashnet' else TACO_CLASSES
+            'nc': len(TRASHNET_CLASSES),
+            'names': TRASHNET_CLASSES
         }
         create_yaml_file(fold_dir / "dataset.yaml", yaml_data)
     
@@ -265,32 +204,9 @@ def create_cross_validation_folds(dataset_dir: Path, dataset_type: str, cv_folds
     logger.info(f"Created {cv_folds} cross-validation folds in {cv_dir}")
 
 ### Training Utilities ###
-def load_training_config(dataset_type: str) -> Dict:
-    """Load training configuration for specified dataset"""
-    if dataset_type == 'trashnet':
-        return TRASHNET_TRAINING_CONFIG
-    elif dataset_type == 'taco':
-        return TACO_TRAINING_CONFIG
-    else:
-        raise ValueError(f"Unknown dataset type: {dataset_type}")
-
-def save_training_metadata(results_dir: Path, dataset_type: str, metrics: Dict) -> None:
-    """Save training results metadata"""
-    metadata = {
-        'dataset': dataset_type,
-        'metrics': metrics,
-        'date': str(datetime.now())
-    }
-    
-    metadata_file = results_dir / dataset_type / "training_metadata.json"
-    metadata_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(metadata_file, 'w') as f:
-        json.dump(metadata, f, indent=4)
-
-def plot_training_curves(results_dir: Path, dataset_type: str, metrics: Dict) -> None:
+def plot_training_curves(results_dir: Path, metrics: Dict) -> None:
     """Plot and save training curves"""
-    plot_dir = results_dir / dataset_type / "plots"
+    plot_dir = results_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
     
     # Training Loss Plot
@@ -298,7 +214,7 @@ def plot_training_curves(results_dir: Path, dataset_type: str, metrics: Dict) ->
     for key in ['train_loss', 'val_loss']:
         if key in metrics:
             plt.plot(metrics['epoch'], metrics[key], label=key.replace('_', ' ').title())
-    plt.title(f"{dataset_type} Training Loss")
+    plt.title("TrashNet Training Loss")
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
@@ -310,7 +226,7 @@ def plot_training_curves(results_dir: Path, dataset_type: str, metrics: Dict) ->
     for metric in METRICS:
         if metric in metrics:
             plt.plot(metrics['epoch'], metrics[metric], label=metric)
-    plt.title(f"{dataset_type} Training Metrics")
+    plt.title("TrashNet Training Metrics")
     plt.xlabel('Epoch')
     plt.ylabel('Value')
     plt.legend()

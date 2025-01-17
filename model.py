@@ -1,4 +1,3 @@
-# model.py
 from pathlib import Path
 import logging
 from ultralytics import YOLO
@@ -25,8 +24,7 @@ class BaselineModel:
     def predict(self, data_yaml: Path, split: str = 'test') -> object:
         """Run predictions using the baseline model"""
         try:
-            dataset_name = data_yaml.parent.name
-            logger.info(f"Running predictions on {dataset_name} {split} set")
+            logger.info(f"Running predictions on TrashNet {split} set")
             
             # Use prediction config from config.py
             results = self.model.val(
@@ -39,11 +37,11 @@ class BaselineModel:
                 conf=PREDICTION_CONFIG['conf'],
                 iou=PREDICTION_CONFIG['iou'],
                 project=str(BASELINE_RESULTS_DIR),
-                name=dataset_name,
+                name="trashnet",
                 exist_ok=True
             )
             
-            logger.info(f"Predictions completed for {dataset_name} {split} set")
+            logger.info(f"Predictions completed for TrashNet {split} set")
             return results
             
         except Exception as e:
@@ -51,31 +49,16 @@ class BaselineModel:
             raise
 
 class TrainedModel:
-    """YOLO model for training on garbage detection"""
+    """YOLO model for training on TrashNet"""
     
-    def __init__(self, model_size: str = 'n', dataset: str = 'trashnet'):
+    def __init__(self, model_size: str = 'n'):
         """Initialize model for training
         
         Args:
             model_size: YOLOv8 model size (n, s, m, l, x)
-            dataset: Dataset to train on ('trashnet' or 'taco')
         """
-        if dataset not in ['trashnet', 'taco']:
-            raise ValueError(f"Dataset must be 'trashnet' or 'taco', got {dataset}")
-            
-        self.dataset = dataset
         model_name = f'yolov8{model_size}.pt'
-        logger.info(f"Loading YOLOv8 model for {dataset} training: {model_name}")
-        
-        # Select appropriate training config
-        self.training_config = (TRASHNET_TRAINING_CONFIG 
-                              if dataset == 'trashnet' 
-                              else TACO_TRAINING_CONFIG)
-        
-        # Select appropriate results directory
-        self.results_dir = (TRAINED_TRASHNET_DIR 
-                          if dataset == 'trashnet' 
-                          else TRAINED_TACO_DIR)
+        logger.info(f"Loading YOLOv8 model for TrashNet training: {model_name}")
         
         try:
             self.model = YOLO(model_name)
@@ -85,27 +68,27 @@ class TrainedModel:
             raise
     
     def train(self, data_yaml: Path) -> object:
-        """Train the model on specified dataset"""
+        """Train the model on TrashNet dataset"""
         try:
-            logger.info(f"Starting training on {self.dataset}")
+            logger.info("Starting training on TrashNet")
             
-            # Train model using dataset-specific config
+            # Train model using config
             results = self.model.train(
                 data=str(data_yaml),
-                epochs=self.training_config['epochs'],
+                epochs=TRAINING_CONFIG['epochs'],
                 imgsz=IMG_SIZE,
-                batch=self.training_config['batch_size'],
-                optimizer=self.training_config['optimizer'],
-                lr0=self.training_config['learning_rate'],
-                weight_decay=self.training_config['weight_decay'],
-                device=self.training_config['device'],
-                project=str(self.results_dir),
-                name=self.dataset,
-                save_period=self.training_config['save_period'],
+                batch=TRAINING_CONFIG['batch_size'],
+                optimizer=TRAINING_CONFIG['optimizer'],
+                lr0=TRAINING_CONFIG['learning_rate'],
+                weight_decay=TRAINING_CONFIG['weight_decay'],
+                device=TRAINING_CONFIG['device'],
+                project=str(TRAINED_TRASHNET_DIR),
+                name="trashnet",
+                save_period=TRAINING_CONFIG['save_period'],
                 exist_ok=True
             )
             
-            logger.info(f"Training completed for {self.dataset}")
+            logger.info("Training completed for TrashNet")
             return results
             
         except Exception as e:
@@ -115,7 +98,7 @@ class TrainedModel:
     def predict(self, data_yaml: Path, split: str = 'test') -> object:
         """Run predictions using the trained model"""
         try:
-            logger.info(f"Running predictions on {self.dataset} {split} set")
+            logger.info(f"Running predictions on TrashNet {split} set")
             
             # Use prediction config from config.py
             results = self.model.val(
@@ -127,12 +110,12 @@ class TrainedModel:
                 save_conf=PREDICTION_CONFIG['save_conf'],
                 conf=PREDICTION_CONFIG['conf'],
                 iou=PREDICTION_CONFIG['iou'],
-                project=str(self.results_dir),
-                name=f"{self.dataset}_predictions",
+                project=str(TRAINED_TRASHNET_DIR),
+                name="trashnet_predictions",
                 exist_ok=True
             )
             
-            logger.info(f"Predictions completed for {self.dataset} {split} set")
+            logger.info(f"Predictions completed for TrashNet {split} set")
             return results
             
         except Exception as e:

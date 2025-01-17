@@ -1,44 +1,36 @@
-# main.py
 import logging
 from pathlib import Path
 from typing import Dict, Tuple
 from config import (
-    OUTPUT_DIR, RESULTS_DIR, BASELINE_RESULTS_DIR, TRAINED_RESULTS_DIR,
-    AUGMENTATION_ENABLED
+    OUTPUT_DIR, RESULTS_DIR, BASELINE_RESULTS_DIR, TRAINED_RESULTS_DIR, 
+    TRAINING_CONFIG
 )
 from preprocessing import DatasetPreprocessor
-from utils import setup_logging, load_training_config, plot_training_curves
+from utils import setup_logging, plot_training_curves
 from model import BaselineModel, TrainedModel
 from evaluate import ModelEvaluator, TrainingEvaluator
 
 logger = setup_logging()
 
-def check_dataset_exists(dataset_name: str) -> bool:
-    """Check if dataset is already processed"""
-    yaml_path = OUTPUT_DIR / dataset_name / "dataset.yaml"
+def check_dataset_exists() -> bool:
+    """Check if TrashNet dataset is already processed"""
+    yaml_path = OUTPUT_DIR / "trashnet" / "dataset.yaml"
     return yaml_path.exists()
 
 def run_preprocessing() -> bool:
-    """Run preprocessing pipeline for both datasets"""
+    """Run preprocessing pipeline for TrashNet dataset"""
     try:
         logger.info("Initializing data preprocessor...")
         preprocessor = DatasetPreprocessor()
         
-        # Process each dataset
-        for dataset in ['trashnet', 'taco']:
-            if not check_dataset_exists(dataset):
-                logger.info(f"Processing {dataset} dataset...")
-                if dataset == 'trashnet':
-                    preprocessor.process_trashnet()
-                else:
-                    preprocessor.process_taco()
-                
-                # Create folds and save metadata
-                preprocessor.create_cross_validation_folds(dataset)
-                preprocessor.log_dataset_stats(dataset)
-                preprocessor.save_dataset_metadata(dataset)
-            else:
-                logger.info(f"{dataset} dataset already processed, skipping...")
+        if not check_dataset_exists():
+            logger.info("Processing TrashNet dataset...")
+            preprocessor.process_trashnet()
+            preprocessor.create_cross_validation_folds()
+            preprocessor.log_dataset_stats()
+            preprocessor.save_dataset_metadata()
+        else:
+            logger.info("TrashNet dataset already processed, skipping...")
         
         logger.info(f"Preprocessing complete. Output saved to {OUTPUT_DIR}")
         return True
@@ -54,67 +46,53 @@ def run_baseline_evaluation() -> Tuple[Dict, bool]:
         model = BaselineModel()
         evaluator = ModelEvaluator()
         
-        baseline_metrics = {}
+        data_yaml = OUTPUT_DIR / "trashnet" / "dataset.yaml"
         
-        # Evaluate on both datasets
-        for dataset in ['trashnet', 'taco']:
-            logger.info(f"Evaluating baseline model on {dataset}...")
-            data_yaml = OUTPUT_DIR / dataset / "dataset.yaml"
+        try:
+            results = model.predict(data_yaml)
+            metrics = evaluator.evaluate_baseline(results)
             
-            try:
-                results = model.predict(data_yaml)
-                metrics = evaluator.evaluate_baseline(results, dataset)
-                baseline_metrics[dataset] = metrics
-                
-                logger.info(f"{dataset} baseline mAP50: {metrics.get('mAP50', 'N/A')}")
-                
-            except Exception as e:
-                logger.error(f"Error evaluating {dataset}: {e}")
-                baseline_metrics[dataset] = {'error': str(e)}
-        
-        logger.info(f"Baseline evaluation complete. Results saved to {BASELINE_RESULTS_DIR}")
-        return baseline_metrics, True
+            logger.info(f"TrashNet baseline mAP50: {metrics.get('mAP50', 'N/A')}")
+            return metrics, True
+            
+        except Exception as e:
+            logger.error(f"Error evaluating TrashNet: {e}")
+            return {'error': str(e)}, False
         
     except Exception as e:
         logger.error(f"Error during baseline evaluation: {str(e)}")
         return {'error': str(e)}, False
 
 def run_model_training() -> Tuple[Dict, bool]:
-    """Run model training on both datasets"""
+    """Run model training on TrashNet dataset"""
     try:
         logger.info("Starting model training")
         training_evaluator = TrainingEvaluator()
-        training_metrics = {}
         
-        # Train on each dataset separately
-        for dataset in ['trashnet', 'taco']:
-            logger.info(f"Training model on {dataset}...")
-            data_yaml = OUTPUT_DIR / dataset / "dataset.yaml"
+        data_yaml = OUTPUT_DIR / "trashnet" / "dataset.yaml"
+        
+        try:
+            # Initialize and train model
+            model = TrainedModel()
+            training_results = model.train(data_yaml)
             
-            try:
-                # Initialize and train model
-                model = TrainedModel(dataset=dataset)
-                training_results = model.train(data_yaml)
-                
-                # Evaluate training results
-                metrics = training_evaluator.evaluate_training(training_results, dataset)
-                training_metrics[dataset] = metrics
-                
-                # Plot training curves
-                plot_training_curves(TRAINED_RESULTS_DIR, dataset, metrics)
-                
-                # Run predictions on test set
-                test_results = model.predict(data_yaml)
-                test_metrics = training_evaluator.evaluate_predictions(test_results, dataset)
-                
-                logger.info(f"{dataset} training mAP50: {metrics.get('mAP50', 'N/A')}")
-                
-            except Exception as e:
-                logger.error(f"Error training on {dataset}: {e}")
-                training_metrics[dataset] = {'error': str(e)}
-        
-        logger.info(f"Training complete. Results saved to {TRAINED_RESULTS_DIR}")
-        return training_metrics, True
+            # Evaluate training results
+            metrics = training_evaluator.evaluate_training(training_results)
+            
+            # Plot training curves
+            plot_training_curves(TRAINED_RESULTS_DIR, metrics)
+            
+            # Run predictions on test set
+            test_results = model.predict(data_yaml)
+            test_metrics = training_evaluator.evaluate_predictions(test_results)
+            
+            logger.info(f"TrashNet training mAP50: {metrics.get('mAP50', 'N/A')}")
+            
+            return metrics, True
+            
+        except Exception as e:
+            logger.error(f"Error training TrashNet: {e}")
+            return {'error': str(e)}, False
         
     except Exception as e:
         logger.error(f"Error during training: {str(e)}")
@@ -124,25 +102,22 @@ def save_run_config():
     """Save current configuration for reproducibility"""
     config_file = RESULTS_DIR / "run_config.txt"
     with open(config_file, 'w') as f:
-        f.write(f"Augmentation Enabled: {AUGMENTATION_ENABLED}\n")
-        for dataset in ['trashnet', 'taco']:
-            config = load_training_config(dataset)
-            f.write(f"\n{dataset.upper()} Training Config:\n")
-            for key, value in config.items():
-                f.write(f"{key}: {value}\n")
+        f.write("TRAINING CONFIGURATION:\n")
+        for key, value in TRAINING_CONFIG.items():
+            f.write(f"{key}: {value}\n")
 
 def main():
     """Main execution pipeline
     
     Pipeline steps:
-    1. Preprocess datasets (if needed)
-    2. Run baseline evaluation (RQ1)
-    3. Run model training (RQ2)
+    1. Preprocess TrashNet dataset (if needed)
+    2. Run baseline evaluation 
+    3. Run model training 
     4. Save configuration
     """
     try:
         # Step 1: Preprocessing
-        if not all(check_dataset_exists(d) for d in ['trashnet', 'taco']):
+        if not check_dataset_exists():
             if not run_preprocessing():
                 raise RuntimeError("Preprocessing failed")
         
