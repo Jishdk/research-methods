@@ -79,6 +79,7 @@ METRICS_DIR = OUTPUT_DIR / "metrics"
 os.makedirs(METRICS_DIR, exist_ok=True)
 
 # Model train settings
+TEST_MODEL = True
 MODEL = 'yolov8n.pt'
 N_EPOCHS = 100
 BATCH = 16
