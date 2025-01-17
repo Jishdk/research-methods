@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 
 # Get directory containing the script
-CODE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+#CODE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+CODE_DIR = Path('/content/drive/MyDrive/Open Univeriteit - Msc Artificial intelligence/Master phase/Research Methods in AI/Research methods in AI/Research Methods/Code')
 
 # Define paths relative to code directory
 DATA_DIR = CODE_DIR / "data"
