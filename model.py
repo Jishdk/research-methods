@@ -157,7 +157,7 @@ def tune_model(dataset,
   # Save best parameters to a YAML file
   best_params_path = output_dir / "best_params.yaml"
   with open(best_params_path, "w") as file:
-  #    yaml.dump(best_params, file)
+      yaml.dump(best_params, file)
 
   print(f"Best hyperparameters saved to {best_params_path}")
   return results #model.best  # Return the best hyperparameters
