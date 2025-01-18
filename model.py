@@ -139,12 +139,22 @@ def tune_model(dataset,
   model = YOLO(model)  # Using YOLOv8 Nano, change to 'yolov8s.pt' or others if needed
 
   # Tune model
-  model.tune(data = str(yaml_dir),
+  #model.tune(data = str(yaml_dir),
+  #            project = str(output_dir),
+  #            name = f"tune_results",
+  #            **train_params, verbose = True)
+
+  #best_params = model.best  # Access the best hyperparameters (depending on model version)
+
+  # Tune model aanpassingen MMN
+  results = model.tune(data = str(yaml_dir),
               project = str(output_dir),
               name = f"tune_results",
-              **train_params, verbose = True)
-
-  best_params = model.best  # Access the best hyperparameters (depending on model version)
+              **train_params, 
+              verbose = True)
+    
+    # Get best parameters from results instead of model.best
+    return results  # Return the tuning results
 
   # Save best parameters to a YAML file
   #best_params_path = output_dir / "best_params.yaml"
@@ -152,8 +162,8 @@ def tune_model(dataset,
   #    yaml.dump(best_params, file)
 
   #print(f"Best hyperparameters saved to {best_params_path}")
-
-  return model.best  # Return the best hyperparameters
+  #return model.best  # Return the best hyperparameters
+  return results  # Return the tuning results
 
 #def cross_val_model(dataset_path, model, train_params, 
 #                    project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}", 
