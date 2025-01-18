@@ -141,7 +141,7 @@ def tune_model(dataset, model, train_params, project=None, output_dir=OUTPUT_DIR
 
     # Tune model iteratively
     for i in range(10):  # Manually manage 10 tuning iterations
-        print(f"Starting tuning iteration {i + 1}...")
+        print(f"Starting tuning iteration {i + 1} with parameters: {train_params}")
         try:
             results = model.tune(
                 data=str(yaml_dir),
