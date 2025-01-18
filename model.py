@@ -113,10 +113,7 @@ def train_model(dataset,
 
 # Define paths (update these paths based on your file structure)
 def tune_model(dataset, model, train_params, project=None, output_dir=OUTPUT_DIR / 'models'):
-    from ultralytics import YOLO
-    import yaml
-    from datetime import datetime
-    
+
     if project is None:
         project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
@@ -126,7 +123,7 @@ def tune_model(dataset, model, train_params, project=None, output_dir=OUTPUT_DIR
     # Validate dataset structure
     if not check_train_folder(dataset_dir):
         print("Folder structure and YAML file are not valid.")
-        return
+        return None
 
     yaml_dir = dataset_dir / 'dataset.yaml'
     print(f"Dataset YAML Path: {yaml_dir}")
@@ -137,37 +134,48 @@ def tune_model(dataset, model, train_params, project=None, output_dir=OUTPUT_DIR
     print(f"Output Directory: {output_dir}")
 
     # Load model
-    try:
-        model = YOLO(model)  # Initialize YOLO model
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        return
+    model = YOLO(model)  # Initialize YOLO model
 
-    # Tune model
-    try:
-        results = model.tune(
-            data=str(yaml_dir),
-            project=str(output_dir),
-            name="tune_results",
-            **train_params,
-            verbose=True
-        )
-        print("Tuning completed successfully.")
-    except Exception as e:
-        print(f"Tuning failed: {e}")
-        return
+    # Initialize variable for storing best parameters
+    final_best_params = None
 
-    # Save best hyperparameters
-    best_params = results.get("hyperparameters", {})
-    best_params_path = output_dir / "best_params.yaml"
-    try:
+    # Tune model iteratively
+    for i in range(10):  # Manually manage 10 tuning iterations
+        print(f"Starting tuning iteration {i + 1}...")
+        try:
+            results = model.tune(
+                data=str(yaml_dir),
+                project=str(output_dir),
+                name="tune_results",
+                **train_params,
+                verbose=True
+            )
+            if results is None:
+                print(f"Iteration {i + 1} failed. Skipping...")
+                continue
+
+            # Retrieve best hyperparameters and update train_params
+            best_params = results.get("hyperparameters", {})
+            print(f"Best hyperparameters after iteration {i + 1}: {best_params}")
+            train_params.update(best_params)
+            final_best_params = best_params  # Store the latest best parameters
+
+        except Exception as e:
+            print(f"Tuning failed during iteration {i + 1}: {e}")
+            break
+
+    # Save final best parameters
+    if final_best_params:
+        best_params_path = output_dir / "best_params.yaml"
         with open(best_params_path, "w") as file:
-            yaml.dump(best_params, file)
+            yaml.dump(final_best_params, file)
         print(f"Best hyperparameters saved to {best_params_path}")
-    except Exception as e:
-        print(f"Failed to save best hyperparameters: {e}")
+    else:
+        print("No best parameters were found during tuning.")
 
-    return results
+    # Return the final best parameters
+    return final_best_params
+
 
 #def cross_val_model(dataset_path, model, train_params, 
 #                    project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}", 
