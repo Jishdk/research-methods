@@ -144,7 +144,6 @@ def tune_model(dataset,
   #            name = f"tune_results",
   #            **train_params, verbose = True)
 
-  #best_params = model.best  # Access the best hyperparameters (depending on model version)
 
   # Tune model aanpassingen MMN
   results = model.tune(data = str(yaml_dir),
@@ -153,12 +152,14 @@ def tune_model(dataset,
               **train_params, 
               verbose = True)
 
+  best_params = results  # Access the best hyperparameters (depending on model version)
+                   
   # Save best parameters to a YAML file
-  #best_params_path = output_dir / "best_params.yaml"
-  #with open(best_params_path, "w") as file:
+  best_params_path = output_dir / "best_params.yaml"
+  with open(best_params_path, "w") as file:
   #    yaml.dump(best_params, file)
 
-  #print(f"Best hyperparameters saved to {best_params_path}")
+  print(f"Best hyperparameters saved to {best_params_path}")
   return results #model.best  # Return the best hyperparameters
 
 #def cross_val_model(dataset_path, model, train_params, 
