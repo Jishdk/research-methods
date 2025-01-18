@@ -162,8 +162,7 @@ def tune_model(dataset,
   #    yaml.dump(best_params, file)
 
   #print(f"Best hyperparameters saved to {best_params_path}")
-  #return model.best  # Return the best hyperparameters
-  return results  # Return the tuning results
+    return results #model.best  # Return the best hyperparameters
 
 #def cross_val_model(dataset_path, model, train_params, 
 #                    project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}", 
