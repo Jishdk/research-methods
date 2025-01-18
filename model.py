@@ -112,55 +112,62 @@ def train_model(dataset,
 
 
 # Define paths (update these paths based on your file structure)
-def tune_model(dataset,
-               model,
-               train_params,
-               project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
-               output_dir        = OUTPUT_DIR / 'models'):
+def tune_model(dataset, model, train_params, project=None, output_dir=OUTPUT_DIR / 'models'):
+    from ultralytics import YOLO
+    import yaml
+    from datetime import datetime
+    
+    if project is None:
+        project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
-  # Define dataset directory
-  dataset_dir = OUTPUT_DIR / dataset
+    # Define dataset directory
+    dataset_dir = OUTPUT_DIR / dataset
 
-  # Check if yolo format
-  if not check_train_folder(dataset_dir):
-    print("Folder structure and YAML file are not valid.")
-    return
+    # Validate dataset structure
+    if not check_train_folder(dataset_dir):
+        print("Folder structure and YAML file are not valid.")
+        return
 
-  yaml_dir    = dataset_dir / 'dataset.yaml'
+    yaml_dir = dataset_dir / 'dataset.yaml'
+    print(f"Dataset YAML Path: {yaml_dir}")
 
-  # Set output dir
-  output_dir.mkdir(exist_ok=True, parents=True) #make model file if does not excist
-  output_dir = output_dir / dataset
-  output_dir.mkdir(exist_ok=True, parents=True) #make dataset file if does not excist
-  output_dir = output_dir / project
-  output_dir.mkdir(exist_ok=True, parents=True)
+    # Set output directory
+    output_dir = output_dir / dataset / project
+    output_dir.mkdir(exist_ok=True, parents=True)
+    print(f"Output Directory: {output_dir}")
 
-  # Load model
-  model = YOLO(model)  # Using YOLOv8 Nano, change to 'yolov8s.pt' or others if needed
+    # Load model
+    try:
+        model = YOLO(model)  # Initialize YOLO model
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        return
 
-  # Tune model
-  #model.tune(data = str(yaml_dir),
-  #            project = str(output_dir),
-  #            name = f"tune_results",
-  #            **train_params, verbose = True)
+    # Tune model
+    try:
+        results = model.tune(
+            data=str(yaml_dir),
+            project=str(output_dir),
+            name="tune_results",
+            **train_params,
+            verbose=True
+        )
+        print("Tuning completed successfully.")
+    except Exception as e:
+        print(f"Tuning failed: {e}")
+        return
 
+    # Save best hyperparameters
+    best_params = results.get("hyperparameters", {})
+    best_params_path = output_dir / "best_params.yaml"
+    try:
+        with open(best_params_path, "w") as file:
+            yaml.dump(best_params, file)
+        print(f"Best hyperparameters saved to {best_params_path}")
+    except Exception as e:
+        print(f"Failed to save best hyperparameters: {e}")
 
-  # Tune model aanpassingen MMN
-  results = model.tune(data = str(yaml_dir),
-              project = str(output_dir),
-              name = f"tune_results",
-              **train_params, 
-              verbose = True)
-
-  best_params = results  # Access the best hyperparameters (depending on model version)
-                   
-  # Save best parameters to a YAML file
-  best_params_path = output_dir / "best_params.yaml"
-  with open(best_params_path, "w") as file:
-      yaml.dump(best_params, file)
-
-  print(f"Best hyperparameters saved to {best_params_path}")
-  return results #model.best  # Return the best hyperparameters
+    return results
 
 #def cross_val_model(dataset_path, model, train_params, 
 #                    project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}", 
