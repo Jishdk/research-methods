@@ -28,7 +28,7 @@ AUGMENTATION_FACTOR = 2     # How many augmented versions per image
 
 # Cross validation
 CV_FOLDS = 3
-#RANDOM_STATE = 42
+RANDOM_STATE = 42
 
 # Classes definitions
 TRASHNET_CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
@@ -81,7 +81,7 @@ os.makedirs(METRICS_DIR, exist_ok=True)
 
 # Model train settings
 TEST_MODEL = True
-MODEL = 'yolov8n.pt'
+MODEL = 'yolov8m.pt' #'yolov8n.pt'
 N_EPOCHS = 100
 BATCH = 16
 
