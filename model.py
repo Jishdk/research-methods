@@ -162,10 +162,10 @@ def tune_model(dataset,
 
 # tuning with external tuner (ray tune) as alternative to tune.model from YoloV8
 def raytune_model(dataset,
-                    model_path,
-                    train_params,
-                    project=f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
-                    output_dir=OUTPUT_DIR / 'models'):
+                  model_path,
+                  train_params,
+                  project=f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+                  output_dir=OUTPUT_DIR / 'models'):
     # Define dataset directory
     dataset_dir = OUTPUT_DIR / dataset
     
@@ -225,7 +225,7 @@ def raytune_model(dataset,
         num_samples=10,
         scheduler=scheduler,
         search_alg=search_alg,
-        local_dir=str(output_dir),
+        storage_path=str(output_dir),  # Use storage_path instead of local_dir
         verbose=1
     )
     
