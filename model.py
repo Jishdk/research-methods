@@ -7,6 +7,9 @@ from ultralytics import YOLO
 from datetime import datetime
 from config import OUTPUT_DIR, IMG_SIZE, BATCH, N_EPOCHS, MODEL
 import yaml
+from ray import tune
+from ray.tune.schedulers import ASHAScheduler
+from ray.tune.search.optuna import OptunaSearch
 
 def check_train_folder(folder_path: Path) -> bool:
     """
@@ -157,6 +160,98 @@ def tune_model(dataset,
         print(f"Error during tuning: {e}")
         return None
 
+# tuning with external tuner (ray tune) as alternative to tune.model from YoloV8
+def raytune_model(dataset,
+                    model_path,
+                    train_params,
+                    project=f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+                    output_dir=OUTPUT_DIR / 'models'):
+    # Define dataset directory
+    dataset_dir = OUTPUT_DIR / dataset
+    
+    # Check if the dataset folder structure and YAML are valid
+    if not check_train_folder(dataset_dir):
+        print("Folder structure and YAML file are not valid.")
+        return
+    
+    yaml_dir = dataset_dir / 'dataset.yaml'
+    
+    # Set output directory
+    output_dir.mkdir(exist_ok=True, parents=True)
+    output_dir = output_dir / dataset
+    output_dir.mkdir(exist_ok=True, parents=True)
+    output_dir = output_dir / project
+    output_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Define the training function
+    def train_yolo(config):
+        model = YOLO(model_path)
+        results = model.train(
+            data=str(yaml_dir),
+            project=str(output_dir / f"trial_{tune.get_trial_id()}"),
+            name="tune_trial",
+            epochs=config["epochs"],
+            lr0=config["lr0"],
+            momentum=config["momentum"],
+            weight_decay=config["weight_decay"],
+            **train_params
+        )
+        # Report metrics for Ray Tune
+        fitness = results.results_dict.get("fitness", 0)  # Adjust key if needed
+        tune.report(fitness=fitness, **config)
+    
+    # Define the search space
+    search_space = {
+        "epochs": tune.choice([5, 10, 20]),
+        "lr0": tune.loguniform(1e-5, 1e-2),
+        "momentum": tune.uniform(0.8, 0.99),
+        "weight_decay": tune.loguniform(1e-6, 1e-3),
+    }
+    
+    # Set up Ray Tune scheduler and search algorithm
+    scheduler = ASHAScheduler(
+        metric="fitness",
+        mode="max",
+        max_t=20,
+        grace_period=5,
+        reduction_factor=2
+    )
+    search_alg = OptunaSearch(metric="fitness", mode="max")
+    
+    # Run Ray Tune hyperparameter search
+    analysis = tune.run(
+        train_yolo,
+        config=search_space,
+        num_samples=10,
+        scheduler=scheduler,
+        search_alg=search_alg,
+        local_dir=str(output_dir),
+        verbose=1
+    )
+    
+    # Save the best hyperparameters
+    best_params = analysis.best_config
+    best_params_path = output_dir / "best_params.yaml"
+    with open(best_params_path, "w") as f:
+        yaml.dump(best_params, f)
+    print(f"Best hyperparameters saved to {best_params_path}")
+    
+    # Generate scatter plots for hyperparameters vs. fitness
+    df = analysis.results_df
+    for param in search_space.keys():
+        if param != "epochs":  # Exclude epochs as it's categorical
+            plt.figure(figsize=(8, 6))
+            plt.scatter(df[param], df["fitness"], alpha=0.7)
+            plt.xlabel(param)
+            plt.ylabel("Fitness")
+            plt.title(f"Fitness vs. {param}")
+            plt.grid(True)
+            scatter_path = output_dir / f"scatter_{param}.png"
+            plt.savefig(scatter_path)
+            plt.close()
+            print(f"Scatter plot saved to {scatter_path}")
+    
+    return analysis
 
 #def cross_val_model(dataset_path, model, train_params, 
 #                    project = f"yolo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}", 
