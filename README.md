@@ -1,138 +1,90 @@
 # Assessing YOLOv8’s Capability in Multi-Class Household Waste Detection and Classification Under Real-World Conditions
 
-[Beschrijving]
+# Multi-Class Waste Detection Using YOLOv8
 
-## Project Structure
+This project implements a waste detection and classification system using YOLOv8. We evaluate the model's performance on the TrashNet, TACO, and annotated TrashNet datasets to assess its capability in real-world conditions.
+
+## Directory Structure
 ```
 .
-├── data/
-│   ├── data_trashnet/     # TrashNet dataset
-│   │   ├── cardboard/
-│   │   ├── glass/
-│   │   ├── metal/
-│   │   ├── paper/
-│   │   ├── plastic/
-│   │   └── trash/
-│   └── data_taco/         # TACO dataset
-│       ├── train/
-│       ├── valid/
-│       └── test/
-├── preprocessed_data/      # Output directory
-│   ├── taco/
-│   └── trashnet/
-├── config.py              # Configuration settings
-├── main.py               # Main execution script
-├── preprocessing.py      # Dataset preprocessing
-├── utils.py             # Utility functions
-└── README.md            # This file
+├── config.py          # Configuration settings
+├── evaluate.py        # Evaluation scripts
+├── main.py           # Main execution script
+├── model.py          # Model definitions
+├── preprocessing.py   # Data preprocessing
+├── utils.py          # Utility functions
+├── requirements.txt   # Dependencies
+└── README.md         # This file
 ```
 
-## Requirements
-- Python 3.8+
-- OpenCV
-- NumPy
-- Pandas
-- scikit-learn
-- tqdm
-- matplotlib
-- PyYAML
+## Setup and Installation
 
-Install requirements:
+1. Create a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+```
+
+2. Install requirements:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Datasets
-The project uses two datasets:
-1. **TrashNet**: Baseline dataset with 2527 images in six waste categories
-   - Categories: glass, paper, metal, plastic, cardboard, trash
-   - Controlled conditions with uniform lighting and background
+## Data Preparation
 
-2. **TACO** (Trash Annotations in Context): 7541 images with rich environmental context
-   - 60 detailed categories mapped to TrashNet's six categories
-   - Varied outdoor settings (streets, beaches, forests)
-
-## Configuration
-Key settings in `config.py`:
-```python
-IMG_SIZE = 640           # YOLOv8 optimal size
-TRAIN_RATIO = 0.7       # Training set ratio
-VAL_RATIO = 0.15        # Validation set ratio
-TEST_RATIO = 0.15       # Test set ratio
-CV_FOLDS = 3            # Number of cross-validation folds
-AUGMENTATION_ENABLED = True
-AUGMENTATION_FACTOR = 2  # Augmented versions per image
+1. Place datasets in the following structure:
+```
+data/
+├── data_trashnet/           # Original TrashNet dataset
+├── data_trashnet_annotated/ # Annotated TrashNet dataset
+└── data_taco/              # TACO dataset
 ```
 
-## Features
-- Data preprocessing and standardization
-- Dataset augmentation
-  - Random rotations (±45 degrees)
-  - Horizontal and vertical flips
-  - Color jittering
-- Cross-validation fold creation
-- Class distribution balancing
-- Dataset visualization tools
-- Proper bounding box rotation handling
-- Support for both Google Colab and local execution
+2. The preprocessed data will be stored in:
+```
+preprocessed_data/
+├── trashnet/
+├── trashnet_annotated/
+└── taco/
+```
 
-## Usage
+## Running the Code
 
-1. **Setup Datasets**
-   ```bash
-   # Create data directories
-   mkdir -p data/data_trashnet data/data_taco
-   
-   # Place datasets in respective directories
-   # TrashNet: data/data_trashnet/
-   # TACO: data/data_taco/
-   ```
+1. Run the complete pipeline:
+```bash
+python main.py
+```
 
-2. **Run Preprocessing**
-   ```bash
-   python main.py
-   ```
-   This will:
-   - Process both datasets
-   - Apply augmentations
-   - Create cross-validation folds
-   - Generate statistics and visualizations
+This will:
+- Preprocess all datasets
+- Run baseline evaluations
+- Train models
+- Generate visualizations
 
-3. **Google Colab Usage**
-   - Mount your Google Drive
-   - Set up the directory structure
-   - Run the preprocessing pipeline
-   ```python
-   from google.colab import drive
-   drive.mount('/content/drive')
-   ```
+## Results
 
-## Output [Prerocessing]
-The preprocessing pipeline generates:
-- Processed images and labels
-- Cross-validation folds
-- Dataset statistics
-- Class distribution reports
-- Sample visualizations
+Results are stored in:
+```
+results/
+├── baseline/      # Baseline model results
+└── trained/       # Trained model results
+    ├── trashnet/
+    ├── trashnet_annotated/
+    └── taco/
+```
 
-## Data Augmentation
-The pipeline includes:
-- Rotation with proper bounding box adjustment
-- Random flips (horizontal/vertical)
-- Color jittering
-- Maintains label accuracy during transformations
-
-## Class Balance
-- Monitors class distribution across splits
-- Generates distribution reports
-- Helps identify potential imbalances
+Each results directory contains:
+- Metrics (mAP, precision, recall)
+- Training curves
+- Example predictions
+- Class distribution plots
 
 ## Authors
 - Eva Koenders
 - Jishnu Harinandansingh
 - Michel Marien
 
-## Acknowledgments
-- TrashNet dataset creators
-- TACO dataset team
-- Ultralytics for YOLOv8
+Research Methods for AI
+Open University of Netherlands
+2024
