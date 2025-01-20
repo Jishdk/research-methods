@@ -1,56 +1,63 @@
 import os
 from pathlib import Path
+import torch
 
-# Get directory containing the script
+# Base Directory Structure
 CODE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
-
-# Define paths relative to code directory
 DATA_DIR = CODE_DIR / "data"
 OUTPUT_DIR = CODE_DIR / "preprocessed_data"
+RESULTS_DIR = CODE_DIR / "results"
 
-TRASHNET_DIR = DATA_DIR / "data_trashnet"  
-TACO_DIR = DATA_DIR / "data_taco"          
+# Dataset Source Directories
+TRASHNET_DIR = DATA_DIR / "data_trashnet"
+TACO_DIR = DATA_DIR / "data_taco"
+TRASHNET_ANNOTATED_DIR = DATA_DIR / "data_trashnet_annotated"
 
-# Image processing
-IMG_SIZE = 640  # YOLOv8 optimal size
-COLOR_MEAN = [0.485, 0.456, 0.406]  # ImageNet mean
-COLOR_STD = [0.229, 0.224, 0.225]   # ImageNet std
+# Results Directory Structure
+BASELINE_RESULTS_DIR = RESULTS_DIR / "baseline"
+TRAINED_RESULTS_DIR = RESULTS_DIR / "trained"
 
-# Dataset split ratios (for TrashNet)
-TRAIN_RATIO = 0.7
-VAL_RATIO = 0.15
-TEST_RATIO = 0.15
+# Dataset-specific Results Directories
+TRAINED_TRASHNET_DIR = TRAINED_RESULTS_DIR / "trashnet"
+TRAINED_TACO_DIR = TRAINED_RESULTS_DIR / "taco"
+TRAINED_TRASHNET_ANNOTATED_DIR = TRAINED_RESULTS_DIR / "trashnet_annotated"
 
-# Augmentation settings
-AUGMENTATION_ENABLED = True  # Control whether to use augmentation
-AUGMENTATION_FACTOR = 2     # How many augmented versions per image
+# Dataset Classes
+TRASHNET_CLASSES = [
+    'cardboard',
+    'glass',
+    'metal',
+    'paper',
+    'plastic',
+    'trash'
+]
 
-# Cross validation
-CV_FOLDS = 3
-RANDOM_STATE = 42
-
-# Classes definitions
-TRASHNET_CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
 TACO_CLASSES = [
-    'Aluminium foil', 'Bottle cap', 'Bottle', 'Broken glass', 'Can', 
+    'Aluminium foil', 'Bottle cap', 'Bottle', 'Broken glass', 'Can',
     'Carton', 'Cigarette', 'Cup', 'Lid', 'Other litter', 'Other plastic',
-    'Paper', 'Plastic bag - wrapper', 'Plastic container', 'Pop tab', 
+    'Paper', 'Plastic bag - wrapper', 'Plastic container', 'Pop tab',
     'Straw', 'Styrofoam piece', 'Unlabeled litter'
 ]
 
-# Categories mapping (TACO to TrashNet)
+# Category Mapping (TACO to TrashNet)
 CATEGORY_MAPPING = {
+    # Plastic items
     'Bottle': 'plastic',
     'Plastic container': 'plastic',
     'Plastic bag - wrapper': 'plastic',
     'Other plastic': 'plastic',
+    # Metal items
     'Can': 'metal',
     'Bottle cap': 'metal',
     'Pop tab': 'metal',
     'Aluminium foil': 'metal',
+    # Glass items
     'Broken glass': 'glass',
+    # Paper items
     'Paper': 'paper',
+    # Cardboard items
     'Carton': 'cardboard',
+    # General trash
     'Cup': 'trash',
     'Lid': 'trash',
     'Other litter': 'trash',
@@ -60,32 +67,102 @@ CATEGORY_MAPPING = {
     'Unlabeled litter': 'trash'
 }
 
-# Google Colab detection
-#try:
-#    from google.colab import drive
-#    IN_COLAB = True
-#    COLAB_ROOT = "collab path"
-#    CODE_DIR = Path(COLAB_ROOT)
-#except ImportError:
-#    IN_COLAB = False
-IN_COLAB = False
+# Dataset Processing Settings
+IMG_SIZE = 640  # YOLOv8 optimal size
 
-# Visualization settings
-SAMPLE_IMAGES_PER_CLASS = 2  # Number of sample images to visualize per class
-FIGURE_SIZE = (15, 10)  # Size of visualization plots
+# Dataset Split Ratios 
+TRAIN_RATIO = 0.7
+VAL_RATIO = 0.15
+TEST_RATIO = 0.15
 
-# Metrics settings
-METRICS_DIR = OUTPUT_DIR / "metrics"
-os.makedirs(METRICS_DIR, exist_ok=True)
+# Cross Validation Settings
+CV_FOLDS = 3
+RANDOM_STATE = 42
 
-# Model train settings
-MODEL = 'yolov8n.pt'
-N_EPOCHS = 100
-BATCH = 16
+# Model Configurations
+YOLO_MODELS = {
+    'n': 'nano',      # 3.2M parameters
+    's': 'small',     # 11.2M parameters
+    'm': 'medium',    # 25.9M parameters
+    'l': 'large',     # 43.8M parameters
+    'x': 'extra'      # 68.2M parameters
+}
+DEFAULT_MODEL = 'n'  # Using nano for faster experimentation
 
-# Performance evaluation
-IOU_THRESHOLD = 0.5  # Intersection over Union threshold for object detection
-CONFIDENCE_THRESHOLD = 0.25  # Confidence threshold for predictions
+# Training Settings
+TRAINING_CONFIG = {
+    'batch_size': 16,
+    'epochs': 100,
+    'optimizer': 'AdamW',
+    'learning_rate': 0.001,
+    'weight_decay': 0.0005,
+    'save_period': 10,  # Save checkpoints every N epochs
+    'device': 'cuda:0' if torch.cuda.is_available() else 'cpu',
+    'workers': 8,  # Number of worker threads
+    'patience': 20,  # Early stopping patience
+    'resume': True,  # Resume training from last checkpoint if available
+}
 
-# Create required directories
+# Evaluation Settings
+CONF_THRESHOLD = 0.25
+IOU_THRESHOLD = 0.5
+
+# Metrics to Compute
+METRICS = [
+    'mAP50',        # mean Average Precision at IoU=0.50
+    'mAP50-95',     # mean Average Precision at IoU=0.50:0.95
+    'precision',    # Precision score
+    'recall',       # Recall score
+    'f1'           # F1 score
+]
+
+# Prediction Settings
+PREDICTION_CONFIG = {
+    'batch_size': 16,
+    'save_txt': True,       # Save predictions as text files
+    'save_conf': True,      # Save confidence scores
+    'iou': IOU_THRESHOLD,   # IOU threshold for NMS
+    'conf': CONF_THRESHOLD, # Confidence threshold
+    'save_json': True,      # Save results to JSON
+    'plots': True,         # Generate plots
+}
+
+# Visualization Settings
+FIGURE_SIZES = {
+    'confusion_matrix': (12, 10),
+    'class_performance': (12, 6),
+    'learning_curves': (10, 6),
+    'examples_grid': (15, 10),  # Size for example images grid
+    'precision_recall': (10, 6)  # Size for precision-recall curves
+}
+
+# Number of example images to show per class
+EXAMPLES_PER_CLASS = 6
+
+# Plot Settings
+PLOT_CONFIG = {
+    'dpi': 300,
+    'font_size': 10,
+    'line_width': 2,
+    'grid': True,
+    'color_palette': 'deep'  # Seaborn color palette
+}
+
+# Create Required Directories
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
+os.makedirs(BASELINE_RESULTS_DIR, exist_ok=True)
+os.makedirs(TRAINED_RESULTS_DIR, exist_ok=True)
+
+# Create Dataset-specific Results Directories
+DATASET_DIRS = {
+    'trashnet': TRAINED_TRASHNET_DIR,
+    'taco': TRAINED_TACO_DIR,
+    'trashnet_annotated': TRAINED_TRASHNET_ANNOTATED_DIR
+}
+
+for dir_name, dir_path in DATASET_DIRS.items():
+    os.makedirs(BASELINE_RESULTS_DIR / dir_name, exist_ok=True)
+    os.makedirs(dir_path, exist_ok=True)
+    os.makedirs(dir_path / "plots", exist_ok=True)
+    os.makedirs(dir_path / "examples", exist_ok=True)

@@ -1,146 +1,176 @@
-import os
-import json
-from typing import Dict, List, Tuple
-import re
 from pathlib import Path
+import logging
+import torch
 from ultralytics import YOLO
-from datetime import datetime
-from config import OUTPUT_DIR, IMG_SIZE, BATCH, N_EPOCHS, MODEL
-import yaml
+from config import *
+from utils import setup_logging
 
-def check_train_folder(folder_path: Path) -> bool:
-    """
-    Check if a folder has the correct YOLO train format.
+logger = setup_logging()
 
-    Args:
-        folder_path (Path): Path to the folder to check.
+class BaselineModel:
+    """Baseline YOLO model without training"""
+    
+    def __init__(self, model_size: str = DEFAULT_MODEL):
+        """Initialize baseline model with pretrained weights
+        
+        Args:
+            model_size: YOLOv8 model size (n, s, m, l, x)
+        """
+        model_name = f'yolov8{model_size}.pt'
+        logger.info(f"Loading pretrained YOLOv8 model: {model_name}")
+        
+        try:
+            self.model = YOLO(model_name)
+            logger.info("Model loaded successfully")
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            raise
+            
+    def predict(self, data_yaml: Path, split: str = 'test') -> object:
+        """Run predictions using the baseline model
+        
+        Args:
+            data_yaml: Path to dataset YAML file
+            split: Dataset split to evaluate ('train', 'val', 'test')
+            
+        Returns:
+            YOLO Results object containing evaluation metrics
+        """
+        try:
+            dataset_name = data_yaml.parent.name
+            logger.info(f"Running predictions on {dataset_name} {split} set")
+            
+            # Use prediction config from config.py
+            results = self.model.val(
+                data=str(data_yaml),
+                split=split,
+                imgsz=IMG_SIZE,
+                batch=PREDICTION_CONFIG['batch_size'],
+                save_txt=PREDICTION_CONFIG['save_txt'],
+                save_conf=PREDICTION_CONFIG['save_conf'],
+                conf=PREDICTION_CONFIG['conf'],
+                iou=PREDICTION_CONFIG['iou'],
+                project=str(BASELINE_RESULTS_DIR),
+                name=dataset_name,
+                exist_ok=True,
+                plots=PREDICTION_CONFIG['plots'],
+                save_json=PREDICTION_CONFIG['save_json']
+            )
+            
+            logger.info(f"Predictions completed for {dataset_name} {split} set")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error during prediction: {e}")
+            raise
 
-    Returns:
-        bool: True if the folder structure and YAML file format are correct, False otherwise.
-    """
-    folders = os.listdir(folder_path)
-
-    # Check for the YAML file
-    yaml_file = folder_path / 'dataset.yaml'  # Assuming the file is named 'dataset.yaml'
-    if not yaml_file.exists():
-        print("Error: Missing dataset.yaml file.")
-        return False
-
-    # Validate the YAML file format
-    try:
-        with open(yaml_file, 'r') as f:
-            data = yaml.safe_load(f)
-        # Check if required keys exist
-        required_keys = ['train', 'val', 'nc', 'names']
-        if not all(key in data for key in required_keys):
-            print(f"Error: dataset.yaml is missing one or more required keys: {required_keys}")
-            return False
-    except Exception as e:
-        print(f"Error: Failed to parse dataset.yaml. {e}")
-        return False
-
-    # Check for the presence of 'train' and 'val' folders
-    if not all(subfolder in folders for subfolder in ['train', 'val']):
-        print("Error: Missing 'train' or 'val' folders.")
-        return False
-
-    # Optionally check for 'test' folder
-    if 'test' in folders:
-        test_folder = folder_path / 'test'
-        if not test_folder.is_dir():
-            print("Error: 'test' is not a directory.")
-            return False
-
-    # Check contents of 'train' and 'val' folders
-    for subfolder in ['train', 'val']:
-        subfolder_path = folder_path / subfolder
-        if not subfolder_path.is_dir():
-            print(f"Error: '{subfolder}' is not a directory.")
-            return False
-        # Check for 'images' and 'labels' subfolders
-        if not all((subfolder_path / sub).is_dir() for sub in ['images', 'labels']):
-            print(f"Error: '{subfolder}' folder is missing 'images' or 'labels' subfolders.")
-            return False
-
-    print("Folder structure and YAML file are valid.")
-    return True
-
-# Define paths (update these paths based on your file structure)
-def train_model(dataset, cross_val: False, output_dir = OUTPUT_DIR / 'models', 
-                yolo_mod = MODEL, epochs = N_EPOCHS, batch = BATCH, imgsz = IMG_SIZE):
-
-  ### Define directories
-  if not dataset in ['taco', 'trashnet']:
-    return dataset + " dataset not supported"
-  
-  dataset_dir = OUTPUT_DIR / dataset
- 
-  #check cross validation folders
-  if cross_val:
-    folds = os.listdir(dataset_dir / "cv_splits")
-    folds = [sp for sp in folds if not(re.search('\.csv', sp))]
-
-    #check structure of all folds
-    for fold in folds:
-      if os.path.isdir(dataset_dir / "cv_splits"):
-        if not(check_train_folder(dataset_dir / "cv_splits" / fold)):
-          return f"fold {fold} is not in valid yolo train format"
-  else:
-    if os.path.isdir(dataset_dir):
-      if not(check_train_folder(dataset_dir)):
-        return "dataset is not in valid yolo train format"
-
-  #set and check test folder
-  #test_set    = dataset_dir / "test"
-  #test_yaml   = dataset_dir / 'dataset.yaml'
-
-  #if not(os.path.isdir(test_set)):
-  #  return f'testset is missing in {dataset_dir}'
-  #if not(os.path.isdir(test_yaml)):
-  #  return f'yaml file is missing in {dataset_dir}'
-
-  #set output dir
-  output_dir.mkdir(exist_ok=True, parents=True) #make model file if does not excist
-  output_dir = output_dir / dataset
-  output_dir.mkdir(exist_ok=True, parents=True) #make dataset file if does not excist
-  output_dir = output_dir / f"yolo_{cross_val}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-  output_dir.mkdir(exist_ok=True, parents=True)
-
-  ### Train model
-  results = {}
-
-  for idx, fold in enumerate(folds):
-
-    print(f"Training for {fold}...")
-    fold_path = dataset_dir / "cv_splits" / fold
-
-    # Paths to train and validation YAML files
-    fold_yaml = fold_path / 'dataset.yaml'
-
-    # Initialize and train the YOLOv8 model
-    model = YOLO(yolo_mod)  # Using YOLOv8 Nano, change to 'yolov8s.pt' or others if needed
-
-    model.train(
-        data=str(fold_yaml),        # Path to the training YAML file
-        epochs = epochs,            # Number of epochs to train
-        imgsz  = imgsz,             # Image size
-        batch  = batch,             # Batch size
-        project=str(output_dir),    # Directory to save results
-        name=f"{fold}_results",     # Name of the folder for this fold
-        val=True                    # Path to the validation YAML file
-    )
-
-    # Evaluate model on the validation set
-    metrics = model.val(data=str(fold_yaml))
-    results[fold] = metrics  # Store metrics for this fold
-
-    # Save the model
-    model_path = output_dir / f"{model}_{fold}.pt"
-    model.export(format='torchscript', path=str(model_path))  # Save the model as .pt file
-
-  # Save results
-  results_file = output_dir / "results.json"
-  with open(results_file, 'w') as f:
-      json.dump(results, f, indent=4)
-
-  return "Training was succesfull"
+class TrainedModel:
+    """YOLO model for training on garbage detection"""
+    
+    def __init__(self, model_size: str = DEFAULT_MODEL, dataset: str = 'trashnet'):
+        """Initialize model for training
+        
+        Args:
+            model_size: YOLOv8 model size (n, s, m, l, x)
+            dataset: Dataset to train on ('trashnet', 'taco', 'trashnet_annotated')
+        """
+        if dataset not in DATASET_DIRS:
+            raise ValueError(f"Dataset must be one of {list(DATASET_DIRS.keys())}, got {dataset}")
+            
+        self.dataset = dataset
+        model_name = f'yolov8{model_size}.pt'
+        logger.info(f"Loading YOLOv8 model for {dataset} training: {model_name}")
+        
+        # Select appropriate results directory
+        self.results_dir = DATASET_DIRS[dataset]
+        
+        try:
+            self.model = YOLO(model_name)
+            logger.info("Model loaded successfully")
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            raise
+    
+    def train(self, data_yaml: Path) -> object:
+        """Train the model on specified dataset
+        
+        Args:
+            data_yaml: Path to dataset YAML file
+            
+        Returns:
+            YOLO Results object containing training metrics
+        """
+        try:
+            logger.info(f"Starting training on {self.dataset}")
+            
+            # Check if CUDA is available
+            if torch.cuda.is_available():
+                logger.info(f"Training on GPU: {torch.cuda.get_device_name(0)}")
+            else:
+                logger.warning("CUDA not available, training on CPU")
+            
+            # Train model using config
+            results = self.model.train(
+                data=str(data_yaml),
+                epochs=TRAINING_CONFIG['epochs'],
+                imgsz=IMG_SIZE,
+                batch=TRAINING_CONFIG['batch_size'],
+                optimizer=TRAINING_CONFIG['optimizer'],
+                lr0=TRAINING_CONFIG['learning_rate'],
+                weight_decay=TRAINING_CONFIG['weight_decay'],
+                device=TRAINING_CONFIG['device'],
+                project=str(self.results_dir),
+                name=self.dataset,
+                save_period=TRAINING_CONFIG['save_period'],
+                exist_ok=True,
+                patience=TRAINING_CONFIG['patience'],
+                workers=TRAINING_CONFIG['workers'],
+                resume=TRAINING_CONFIG['resume'],
+                plots=True,  # Enable training plots
+                save=True,  # Save best model
+                val=True    # Run validation during training
+            )
+            
+            logger.info(f"Training completed for {self.dataset}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error during training: {e}")
+            raise
+    
+    def predict(self, data_yaml: Path, split: str = 'test') -> object:
+        """Run predictions using the trained model
+        
+        Args:
+            data_yaml: Path to dataset YAML file
+            split: Dataset split to evaluate ('train', 'val', 'test')
+            
+        Returns:
+            YOLO Results object containing evaluation metrics
+        """
+        try:
+            logger.info(f"Running predictions on {self.dataset} {split} set")
+            
+            # Use prediction config from config.py
+            results = self.model.val(
+                data=str(data_yaml),
+                split=split,
+                imgsz=IMG_SIZE,
+                batch=PREDICTION_CONFIG['batch_size'],
+                save_txt=PREDICTION_CONFIG['save_txt'],
+                save_conf=PREDICTION_CONFIG['save_conf'],
+                conf=PREDICTION_CONFIG['conf'],
+                iou=PREDICTION_CONFIG['iou'],
+                project=str(self.results_dir),
+                name=f"{self.dataset}_predictions",
+                exist_ok=True,
+                plots=PREDICTION_CONFIG['plots'],
+                save_json=PREDICTION_CONFIG['save_json']
+            )
+            
+            logger.info(f"Predictions completed for {self.dataset} {split} set")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error during prediction: {e}")
+            raise
