@@ -1,7 +1,5 @@
 # Assessing YOLOv8’s Capability in Multi-Class Household Waste Detection and Classification Under Real-World Conditions
 
-# Multi-Class Waste Detection Using YOLOv8
-
 This project implements a waste detection and classification system using YOLOv8. We evaluate the model's performance on the TrashNet, TACO, and annotated TrashNet datasets to assess its capability in real-world conditions.
 
 ## Directory Structure
