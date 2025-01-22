@@ -1,3 +1,5 @@
+# utils.py
+
 import cv2
 import numpy as np
 import pandas as pd
@@ -7,14 +9,18 @@ import logging
 import shutil
 from datetime import datetime
 import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
 from typing import Dict, List, Tuple
 from sklearn.model_selection import KFold
 from config import *
 
 def setup_logging():
-    """Set up logging configuration"""
+    """
+    Set up logging configuration
+    
+    Returns:
+        logging.Logger: Configured logger instance
+    """
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
@@ -23,9 +29,16 @@ def setup_logging():
 
 logger = setup_logging()
 
-### Directory Setup ###
 def setup_directories(base_dir: Path) -> Tuple[Path, Path, Path]:
-    """Create and return necessary data directories"""
+    """
+    Create and return necessary data directories
+    
+    Args:
+        base_dir: Base directory path
+        
+    Returns:
+        Tuple[Path, Path, Path]: Paths to train, val, and test directories
+    """
     splits = ['train', 'val', 'test']
     split_dirs = []
     
@@ -37,9 +50,17 @@ def setup_directories(base_dir: Path) -> Tuple[Path, Path, Path]:
     
     return tuple(split_dirs)
 
-### Image Processing ###
 def resize_image(image: np.ndarray, target_size: Tuple[int, int]) -> np.ndarray:
-    """Resize image maintaining aspect ratio with padding"""
+    """
+    Resize image maintaining aspect ratio with padding
+    
+    Args:
+        image: Input image array
+        target_size: Desired output size (width, height)
+        
+    Returns:
+        np.ndarray: Resized and padded image
+    """
     if image is None or len(image.shape) != 3:
         raise ValueError(f"Invalid image shape: {getattr(image, 'shape', None)}")
     
@@ -59,40 +80,66 @@ def resize_image(image: np.ndarray, target_size: Tuple[int, int]) -> np.ndarray:
     padded[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
     return padded
 
-### File Processing ###
-def process_split_files(files: List[Tuple[str, np.ndarray]], labels: List[str], 
-                       split_dir: Path, img_size: int) -> None:
-    """Process and save image files with labels"""
+def normalize_image(image: np.ndarray, mean: List[float], std: List[float]) -> np.ndarray:
+    """
+    Normalize image using provided mean and standard deviation
+    
+    Args:
+        image: Input image array
+        mean: Mean values for each channel
+        std: Standard deviation values for each channel
+        
+    Returns:
+        np.ndarray: Normalized image
+    """
+    return ((image.astype(np.float32) / 255.0) - np.array(mean)) / np.array(std)
+
+def process_split_files(files: List[Path], labels: List[str], 
+                       split_dir: Path) -> None:
+    """
+    Process and save image files with labels
+    
+    Args:
+        files: List of image file paths
+        labels: List of label strings
+        split_dir: Output directory for the split
+    """
     images_dir = split_dir / "images"
     labels_dir = split_dir / "labels"
     
-    for (stem, img), label in zip(files, labels):
+    for img_path, label in zip(files, labels):
         try:
-            # Process image
-            target_size = (img_size, img_size)
-            img = resize_image(img, target_size)
-            
-            # Save processed image
-            cv2.imwrite(
-                str(images_dir / f"{stem}.jpg"),
-                cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            )
+            # Copy image
+            shutil.copy2(img_path, images_dir / f"{img_path.stem}.jpg")
             
             # Save label
-            with open(labels_dir / f"{stem}.txt", 'w') as f:
+            with open(labels_dir / f"{img_path.stem}.txt", 'w') as f:
                 f.write(label)
                 
         except Exception as e:
-            logger.error(f"Error processing {stem}: {e}")
+            logger.error(f"Error processing {img_path.stem}: {e}")
 
 def create_yaml_file(path: Path, data: Dict) -> None:
-    """Create YAML file with dataset configuration"""
+    """
+    Create YAML file with dataset configuration
+    
+    Args:
+        path: Output path for YAML file
+        data: Configuration data to save
+    """
     with open(path, 'w') as f:
         yaml.dump(data, f, sort_keys=False)
 
-### Dataset Statistics ###
 def count_images_per_class(labels_dir: Path) -> Dict[int, int]:
-    """Count number of images per class in labels directory"""
+    """
+    Count number of images per class in labels directory
+    
+    Args:
+        labels_dir: Directory containing label files
+        
+    Returns:
+        Dict[int, int]: Dictionary mapping class IDs to counts
+    """
     class_counts = {}
     for label_file in labels_dir.glob('*.txt'):
         try:
@@ -105,7 +152,13 @@ def count_images_per_class(labels_dir: Path) -> Dict[int, int]:
     return class_counts
 
 def save_dataset_metadata(dataset_dir: Path, dataset_type: str) -> None:
-    """Save comprehensive dataset statistics"""
+    """
+    Save comprehensive dataset statistics
+    
+    Args:
+        dataset_dir: Dataset directory path
+        dataset_type: Type of dataset
+    """
     metadata = {
         'total_images': 0,
         'class_distribution': {},
@@ -121,12 +174,18 @@ def save_dataset_metadata(dataset_dir: Path, dataset_type: str) -> None:
         }
         metadata['total_images'] += n_images
     
-    output_file = dataset_dir / "metadata.json"
+    output_file = dataset_dir / f"{dataset_type}_metadata.json"
     with open(output_file, 'w') as f:
         json.dump(metadata, f, indent=2)
 
 def log_dataset_stats(dataset_dir: Path, dataset_type: str) -> None:
-    """Log basic dataset statistics"""
+    """
+    Log basic dataset statistics
+    
+    Args:
+        dataset_dir: Dataset directory path
+        dataset_type: Type of dataset
+    """
     stats = {split: len(list((dataset_dir / split / "images").glob("*.jpg")))
             for split in ["train", "val", "test"]}
     
@@ -136,10 +195,15 @@ def log_dataset_stats(dataset_dir: Path, dataset_type: str) -> None:
     for split, count in stats.items():
         logger.info(f"{split} split: {count} images")
 
-### Cross Validation ###
-def create_cross_validation_folds(dataset_dir: Path, class_names: List[str], 
-                                cv_folds: int) -> None:
-    """Create k-fold cross-validation splits"""
+def create_cross_validation_folds(dataset_dir: Path, dataset_type: str, cv_folds: int) -> None:
+    """
+    Create k-fold cross-validation splits
+    
+    Args:
+        dataset_dir: Dataset directory path
+        dataset_type: Type of dataset
+        cv_folds: Number of folds to create
+    """
     cv_dir = dataset_dir / "cv_splits"
     cv_dir.mkdir(parents=True, exist_ok=True)
     
@@ -172,18 +236,16 @@ def create_cross_validation_folds(dataset_dir: Path, class_names: List[str],
             (split_dir / "images").mkdir(parents=True, exist_ok=True)
             (split_dir / "labels").mkdir(parents=True, exist_ok=True)
             
-            split_metadata = {}
             for img_file in files:
                 label_file = train_labels_dir / f"{img_file.stem}.txt"
                 if label_file.exists():
                     shutil.copy2(img_file, split_dir / "images" / img_file.name)
                     shutil.copy2(label_file, split_dir / "labels" / f"{img_file.stem}.txt")
-                    
-                    with open(label_file, 'r') as f:
-                        class_id = int(f.readline().split()[0])
-                        split_metadata[class_id] = split_metadata.get(class_id, 0) + 1
-            
-            metadata[f"fold_{fold_idx}_{split_name}"] = split_metadata
+        
+        # Create fold configuration
+        class_names = (TRASHNET_CLASSES if dataset_type == 'trashnet' else 
+                      TRASHNET_ANNOTATED_CLASSES if dataset_type == 'trashnet_annotated' else 
+                      TACO_CLASSES)
         
         yaml_data = {
             'path': str(fold_dir.absolute()),
@@ -194,107 +256,46 @@ def create_cross_validation_folds(dataset_dir: Path, class_names: List[str],
         }
         create_yaml_file(fold_dir / "dataset.yaml", yaml_data)
     
-    distribution_file = cv_dir / "fold_distribution.csv"
-    df = pd.DataFrame.from_dict(metadata, orient='index')
-    df.index.name = 'Fold'
-    df.to_csv(distribution_file)
-    
     logger.info(f"Created {cv_folds} cross-validation folds in {cv_dir}")
 
-### Example Images Generation ###
-def save_example_images(dataset_type: str) -> None:
-    """Save grid of example images for each class
+def load_training_config(dataset_type: str) -> Dict:
+    """
+    Load training configuration for specified dataset
     
     Args:
-        dataset_type: Name of dataset ('trashnet', 'taco', 'trashnet_annotated')
+        dataset_type: Type of dataset
+        
+    Returns:
+        Dict: Training configuration
     """
-    dataset_dir = OUTPUT_DIR / dataset_type
-    examples_dir = DATASET_DIRS[dataset_type] / "examples"
-    examples_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Get class names
-    class_names = (TRASHNET_CLASSES if dataset_type in ['trashnet', 'trashnet_annotated'] 
-                  else TACO_CLASSES)
-    
-    # Create figure for all classes
-    n_classes = len(class_names)
-    fig, axes = plt.subplots(n_classes, EXAMPLES_PER_CLASS, 
-                            figsize=FIGURE_SIZES['examples_grid'])
-    
-    # Process each class
-    for class_idx, class_name in enumerate(class_names):
-        images = []
-        labels_dir = dataset_dir / "train" / "labels"
-        images_dir = dataset_dir / "train" / "images"
-        
-        # Collect images for this class
-        for label_file in labels_dir.glob("*.txt"):
-            with open(label_file, 'r') as f:
-                first_line = f.readline().strip()
-                if first_line.startswith(f"{class_idx} "):
-                    img_path = images_dir / f"{label_file.stem}.jpg"
-                    if img_path.exists():
-                        images.append(img_path)
-        
-        # Randomly select examples
-        if len(images) > EXAMPLES_PER_CLASS:
-            images = np.random.choice(images, EXAMPLES_PER_CLASS, replace=False)
-        
-        # Plot examples
-        for i, img_path in enumerate(images[:EXAMPLES_PER_CLASS]):
-            img = cv2.imread(str(img_path))
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            axes[class_idx, i].imshow(img)
-            axes[class_idx, i].axis('off')
-            
-            # Add class name to first image in row
-            if i == 0:
-                axes[class_idx, i].set_title(class_name)
-    
-    # Save plot
-    plt.tight_layout()
-    plt.savefig(examples_dir / 'class_examples.png', dpi=PLOT_CONFIG['dpi'],
-                bbox_inches='tight')
-    plt.close()
-    
-    logger.info(f"Saved example images for {dataset_type} to {examples_dir}")
+    if dataset_type == 'trashnet':
+        return TRASHNET_TRAINING_CONFIG
+    elif dataset_type == 'trashnet_annotated':
+        return TRASHNET_ANNOTATED_TRAINING_CONFIG
+    elif dataset_type == 'taco':
+        return TACO_TRAINING_CONFIG
+    else:
+        raise ValueError(f"Unknown dataset type: {dataset_type}")
 
-### Training Utilities ###
-def plot_training_curves(results_dir: Path, dataset_type: str, metrics: Dict) -> None:
-    """Plot and save training curves"""
-    plot_dir = results_dir / dataset_type / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
+def plot_learning_curves(metrics: Dict, save_dir: Path) -> None:
+    """
+    Plot training and validation learning curves
     
-    # Set plot style
-    plt.style.use('seaborn')
-    sns.set_palette(PLOT_CONFIG['color_palette'])
+    Args:
+        metrics: Dictionary containing training metrics
+        save_dir: Directory to save plots
+    """
+    plt.figure(figsize=FIGURE_SIZES['learning_curves'])
     
-    # Plot training curves
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
+    for metric in ['mAP50', 'precision', 'recall']:
+        if metric in metrics:
+            plt.plot(metrics['epoch'], metrics[metric], label=metric)
     
-    # Training and validation loss
-    ax1.plot(metrics['epoch'], metrics['training_loss'], 'b-', 
-             label='Training Loss', linewidth=PLOT_CONFIG['line_width'])
-    if 'validation_loss' in metrics:
-        ax1.plot(metrics['epoch'], metrics['validation_loss'], 'r-',
-                label='Validation Loss', linewidth=PLOT_CONFIG['line_width'])
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.set_title(f'{dataset_type} Training Loss')
-    ax1.grid(PLOT_CONFIG['grid'])
-    ax1.legend()
+    plt.title('Training Metrics')
+    plt.xlabel('Epoch')
+    plt.ylabel('Score')
+    plt.legend()
+    plt.grid(True)
     
-    # Metrics
-    for metric in METRICS:
-        if metric.lower() in metrics:
-            ax2.plot(metrics['epoch'], metrics[metric.lower()], 
-                    label=metric, linewidth=PLOT_CONFIG['line_width'])
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Value')
-    ax2.set_title(f'{dataset_type} Training Metrics')
-    ax2.grid(PLOT_CONFIG['grid'])
-    ax2.legend()
-    
-    plt.tight_layout()
-    plt.savefig(plot_dir / 'training_curves.png', dpi=PLOT_CONFIG['dpi'])
+    plt.savefig(save_dir / 'learning_curves.png')
     plt.close()

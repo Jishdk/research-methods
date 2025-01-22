@@ -1,33 +1,48 @@
+# preprocessing.py
+
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 from typing import Dict, List, Tuple
+import cv2
+import numpy as np
+import shutil
+from config import *
 from utils import (
     setup_logging, create_cross_validation_folds, log_dataset_stats,
     save_dataset_metadata, setup_directories, process_split_files,
     create_yaml_file
 )
-import cv2
-import numpy as np
-from config import *
 
 logger = setup_logging()
 
 class DatasetPreprocessor:
+    """
+    Handles preprocessing of waste detection datasets
+    """
     def __init__(self):
-        """Initialize the dataset preprocessor"""
+        """Initialize dataset preprocessor with necessary directories"""
         self.processed_dir = OUTPUT_DIR
+        self.taco_dir = self.processed_dir / "taco"
+        self.trashnet_dir = self.processed_dir / "trashnet"
+        self.trashnet_annotated_dir = self.processed_dir / "trashnet_annotated"
+        self.example_dir = EXAMPLES_DIR
         
         # Set up directories for all datasets
-        self.dataset_dirs = {}
-        self.split_dirs = {}
-        
-        for dataset in DATASET_DIRS.keys():
-            self.dataset_dirs[dataset] = self.processed_dir / dataset
-            self.split_dirs[dataset] = setup_directories(self.dataset_dirs[dataset])
+        self.taco_train_dir, self.taco_val_dir, self.taco_test_dir = setup_directories(self.taco_dir)
+        self.trashnet_train_dir, self.trashnet_val_dir, self.trashnet_test_dir = setup_directories(self.trashnet_dir)
+        self.trashnet_annotated_train_dir, self.trashnet_annotated_val_dir, self.trashnet_annotated_test_dir = setup_directories(self.trashnet_annotated_dir)
 
     def is_fully_processed(self, dataset_type: str) -> bool:
-        """Check if dataset and its folds are already processed"""
-        dataset_dir = self.dataset_dirs[dataset_type]
+        """
+        Check if dataset and its folds are already processed
+        
+        Args:
+            dataset_type: Type of dataset to check
+            
+        Returns:
+            bool: True if dataset is fully processed
+        """
+        dataset_dir = getattr(self, f"{dataset_type}_dir")
         cv_dir = dataset_dir / "cv_splits"
         
         # Check basic preprocessing
@@ -45,8 +60,16 @@ class DatasetPreprocessor:
         return True
 
     def process_dataset(self, dataset_type: str) -> bool:
-        """Check if dataset is already processed"""
-        dataset_dir = self.dataset_dirs[dataset_type]
+        """
+        Check if dataset is already processed
+        
+        Args:
+            dataset_type: Type of dataset to check
+            
+        Returns:
+            bool: True if dataset is processed
+        """
+        dataset_dir = getattr(self, f"{dataset_type}_dir")
         
         if dataset_dir.exists():
             required_dirs = [
@@ -65,34 +88,32 @@ class DatasetPreprocessor:
                     
         return False
 
-    def process_image_batch(self, image_paths: List[Path], labels: List[str], 
-                          split_dir: Path) -> None:
-        """Process a batch of images
+    def save_dataset_examples(self, dataset_type: str) -> None:
+        """
+        Save example images from each dataset class
         
         Args:
-            image_paths: List of paths to images
-            labels: List of label strings
-            split_dir: Directory to save processed files
+            dataset_type: Type of dataset to save examples from
         """
-        processed_images = []
-        processed_labels = []
+        dataset_dir = getattr(self, f"{dataset_type}_dir")
+        examples_dir = self.example_dir / dataset_type
+        examples_dir.mkdir(parents=True, exist_ok=True)
         
-        for img_path, label in zip(image_paths, labels):
-            try:
-                img = cv2.imread(str(img_path))
-                if img is None:
-                    logger.warning(f"Could not read image: {img_path}")
-                    continue
-                    
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                processed_images.append((img_path.stem, img))
-                processed_labels.append(label)
-                
-            except Exception as e:
-                logger.error(f"Error processing {img_path}: {e}")
-                continue
+        # Get class names based on dataset type
+        if dataset_type == 'trashnet':
+            classes = TRASHNET_CLASSES
+        elif dataset_type == 'trashnet_annotated':
+            classes = TRASHNET_ANNOTATED_CLASSES
+        else:
+            classes = TACO_CLASSES
         
-        process_split_files(processed_images, processed_labels, split_dir, IMG_SIZE)
+        # Save examples for each class
+        for class_name in classes:
+            class_images = list((dataset_dir / "train" / "images").glob('*.jpg'))
+            if class_images:
+                # Take first NUM_EXAMPLES images
+                for i, img_path in enumerate(class_images[:NUM_EXAMPLES]):
+                    shutil.copy2(img_path, examples_dir / f"{class_name}_{i+1}.jpg")
 
     def process_trashnet(self):
         """Process TrashNet dataset"""
@@ -123,18 +144,71 @@ class DatasetPreprocessor:
         )
 
         # Process splits
-        splits = {
-            'train': (train_paths, train_labels, self.split_dirs['trashnet'][0]),
-            'val': (val_paths, val_labels, self.split_dirs['trashnet'][1]),
-            'test': (test_paths, test_labels, self.split_dirs['trashnet'][2])
-        }
-        
-        for split_name, (paths, labels, output_dir) in splits.items():
+        for split_name, (paths, labels, output_dir) in {
+            'train': (train_paths, train_labels, self.trashnet_train_dir),
+            'val': (val_paths, val_labels, self.trashnet_val_dir),
+            'test': (test_paths, test_labels, self.trashnet_test_dir)
+        }.items():
             logger.info(f"Processing {split_name} split...")
-            self.process_image_batch(paths, labels, output_dir)
+            process_split_files(paths, labels, output_dir)
 
         # Save configuration
-        self._save_dataset_config('trashnet', TRASHNET_CLASSES)
+        yaml_data = {
+            'path': str(self.trashnet_dir.absolute()),
+            'train': 'train/images',
+            'val': 'val/images',
+            'test': 'test/images',
+            'nc': len(TRASHNET_CLASSES),
+            'names': TRASHNET_CLASSES
+        }
+        create_yaml_file(self.trashnet_dir / 'dataset.yaml', yaml_data)
+
+    def process_trashnet_annotated(self):
+        """Process annotated TrashNet dataset"""
+        if self.is_fully_processed('trashnet_annotated'):
+            logger.info("Annotated TrashNet dataset already fully processed")
+            return
+
+        # Similar to process_trashnet but using annotated data
+        image_paths, labels = [], []
+        
+        for category in TRASHNET_ANNOTATED_CLASSES:
+            category_dir = TRASHNET_ANNOTATED_DIR / category
+            if not category_dir.exists():
+                continue
+
+            for img_path in category_dir.glob('*.jpg'):
+                label_path = category_dir / f"{img_path.stem}.txt"
+                if label_path.exists():
+                    with open(label_path, 'r') as f:
+                        labels.append(f.read())
+                        image_paths.append(img_path)
+
+        # Split and process data
+        train_paths, temp_paths, train_labels, temp_labels = train_test_split(
+            image_paths, labels, train_size=TRAIN_RATIO, random_state=RANDOM_STATE, shuffle=True
+        )
+        val_paths, test_paths, val_labels, test_labels = train_test_split(
+            temp_paths, temp_labels, test_size=0.5, random_state=RANDOM_STATE, shuffle=True
+        )
+
+        for split_name, (paths, labels, output_dir) in {
+            'train': (train_paths, train_labels, self.trashnet_annotated_train_dir),
+            'val': (val_paths, val_labels, self.trashnet_annotated_val_dir),
+            'test': (test_paths, test_labels, self.trashnet_annotated_test_dir)
+        }.items():
+            logger.info(f"Processing {split_name} split...")
+            process_split_files(paths, labels, output_dir)
+
+        yaml_data = {
+            'path': str(self.trashnet_annotated_dir.absolute()),
+            'train': 'train/images',
+            'val': 'val/images',
+            'test': 'test/images',
+            'nc': len(TRASHNET_ANNOTATED_CLASSES),
+            'names': TRASHNET_ANNOTATED_CLASSES
+        }
+        create_yaml_file(self.trashnet_annotated_dir / 'dataset.yaml', yaml_data)
 
     def process_taco(self):
         """Process TACO dataset"""
@@ -142,14 +216,14 @@ class DatasetPreprocessor:
             logger.info("TACO dataset already fully processed")
             return
 
-        # Process each split from original TACO dataset
         split_mapping = {'train': 'train', 'valid': 'val', 'test': 'test'}
+
         for input_split, output_split in split_mapping.items():
             split_dir = TACO_DIR / input_split
             if not split_dir.exists():
                 continue
 
-            output_dir = self.split_dirs['taco'][list(split_mapping.values()).index(output_split)]
+            output_dir = getattr(self, f'taco_{output_split}_dir')
             images_dir = split_dir / 'images'
             labels_dir = split_dir / 'labels'
 
@@ -168,75 +242,45 @@ class DatasetPreprocessor:
                     logger.error(f"Error reading label file {label_path}: {e}")
                     continue
 
-            self.process_image_batch(image_paths, labels, output_dir)
+            process_split_files(image_paths, labels, output_dir)
 
         # Save configuration
-        self._save_dataset_config('taco', TACO_CLASSES)
-
-    def process_trashnet_annotated(self):
-        """Process annotated TrashNet dataset"""
-        if self.is_fully_processed('trashnet_annotated'):
-            logger.info("Annotated TrashNet dataset already fully processed")
-            return
-
-        # Process existing split structure
-        for split in ['train', 'val', 'test']:
-            split_dir = TRASHNET_ANNOTATED_DIR / split
-            if not split_dir.exists():
-                continue
-
-            output_dir = self.split_dirs['trashnet_annotated'][
-                ['train', 'val', 'test'].index(split)
-            ]
-            
-            # Copy files to processed directory
-            images_dir = split_dir / 'images'
-            labels_dir = split_dir / 'labels'
-            
-            image_paths, labels = [], []
-            for img_path in images_dir.glob('*.jpg'):
-                label_path = labels_dir / f"{img_path.stem}.txt"
-                if not label_path.exists():
-                    continue
-
-                try:
-                    with open(label_path, "r") as f:
-                        labels.append(f.read())
-                        image_paths.append(img_path)
-                except Exception as e:
-                    logger.error(f"Error reading label file {label_path}: {e}")
-                    continue
-
-            self.process_image_batch(image_paths, labels, output_dir)
-
-        # Save configuration
-        self._save_dataset_config('trashnet_annotated', TRASHNET_CLASSES)
-
-    def _save_dataset_config(self, dataset_type: str, class_names: List[str]):
-        """Save dataset configuration YAML file"""
         yaml_data = {
-            'path': str(self.dataset_dirs[dataset_type].absolute()),
+            'path': str(self.taco_dir.absolute()),
             'train': 'train/images',
             'val': 'val/images',
             'test': 'test/images',
-            'nc': len(class_names),
-            'names': class_names
+            'nc': len(TACO_CLASSES),
+            'names': TACO_CLASSES
         }
-        create_yaml_file(self.dataset_dirs[dataset_type] / 'dataset.yaml', yaml_data)
+        create_yaml_file(self.taco_dir / 'dataset.yaml', yaml_data)
 
     def create_cross_validation_folds(self, dataset_type: str):
-        """Create k-fold cross-validation splits"""
-        dataset_dir = self.dataset_dirs[dataset_type]
-        class_names = (TRASHNET_CLASSES if dataset_type in ['trashnet', 'trashnet_annotated'] 
-                      else TACO_CLASSES)
-        create_cross_validation_folds(dataset_dir, class_names, CV_FOLDS)
+        """
+        Create k-fold cross-validation splits
+        
+        Args:
+            dataset_type: Type of dataset to create folds for
+        """
+        dataset_dir = getattr(self, f"{dataset_type}_dir")
+        create_cross_validation_folds(dataset_dir, dataset_type, CV_FOLDS)
 
     def log_dataset_stats(self, dataset_type: str):
-        """Log dataset statistics"""
-        dataset_dir = self.dataset_dirs[dataset_type]
+        """
+        Log dataset statistics
+        
+        Args:
+            dataset_type: Type of dataset to log stats for
+        """
+        dataset_dir = getattr(self, f"{dataset_type}_dir")
         log_dataset_stats(dataset_dir, dataset_type)
 
     def save_dataset_metadata(self, dataset_type: str):
-        """Save dataset statistics"""
-        dataset_dir = self.dataset_dirs[dataset_type]
+        """
+        Save dataset statistics
+        
+        Args:
+            dataset_type: Type of dataset to save metadata for
+        """
+        dataset_dir = getattr(self, f"{dataset_type}_dir")
         save_dataset_metadata(dataset_dir, dataset_type)

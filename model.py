@@ -1,6 +1,7 @@
+# model.py
+
 from pathlib import Path
 import logging
-import torch
 from ultralytics import YOLO
 from config import *
 from utils import setup_logging
@@ -8,13 +9,16 @@ from utils import setup_logging
 logger = setup_logging()
 
 class BaselineModel:
-    """Baseline YOLO model without training"""
+    """
+    Baseline YOLOv8 model without training, used only for TrashNet evaluation
+    """
     
     def __init__(self, model_size: str = DEFAULT_MODEL):
-        """Initialize baseline model with pretrained weights
+        """
+        Initialize baseline model with pretrained weights
         
         Args:
-            model_size: YOLOv8 model size (n, s, m, l, x)
+            model_size: Size of YOLOv8 model to use (n, s, m, l, x)
         """
         model_name = f'yolov8{model_size}.pt'
         logger.info(f"Loading pretrained YOLOv8 model: {model_name}")
@@ -27,20 +31,20 @@ class BaselineModel:
             raise
             
     def predict(self, data_yaml: Path, split: str = 'test') -> object:
-        """Run predictions using the baseline model
+        """
+        Run predictions using the baseline model
         
         Args:
-            data_yaml: Path to dataset YAML file
-            split: Dataset split to evaluate ('train', 'val', 'test')
+            data_yaml: Path to dataset configuration file
+            split: Dataset split to use (train, val, test)
             
         Returns:
-            YOLO Results object containing evaluation metrics
+            object: YOLOv8 validation results
         """
         try:
             dataset_name = data_yaml.parent.name
             logger.info(f"Running predictions on {dataset_name} {split} set")
             
-            # Use prediction config from config.py
             results = self.model.val(
                 data=str(data_yaml),
                 split=split,
@@ -52,9 +56,7 @@ class BaselineModel:
                 iou=PREDICTION_CONFIG['iou'],
                 project=str(BASELINE_RESULTS_DIR),
                 name=dataset_name,
-                exist_ok=True,
-                plots=PREDICTION_CONFIG['plots'],
-                save_json=PREDICTION_CONFIG['save_json']
+                exist_ok=True
             )
             
             logger.info(f"Predictions completed for {dataset_name} {split} set")
@@ -65,24 +67,35 @@ class BaselineModel:
             raise
 
 class TrainedModel:
-    """YOLO model for training on garbage detection"""
+    """
+    YOLOv8 model for training on waste detection datasets
+    """
     
     def __init__(self, model_size: str = DEFAULT_MODEL, dataset: str = 'trashnet'):
-        """Initialize model for training
+        """
+        Initialize model for training
         
         Args:
             model_size: YOLOv8 model size (n, s, m, l, x)
-            dataset: Dataset to train on ('trashnet', 'taco', 'trashnet_annotated')
+            dataset: Dataset to train on ('trashnet', 'trashnet_annotated', or 'taco')
         """
-        if dataset not in DATASET_DIRS:
-            raise ValueError(f"Dataset must be one of {list(DATASET_DIRS.keys())}, got {dataset}")
+        if dataset not in ['trashnet', 'trashnet_annotated', 'taco']:
+            raise ValueError(f"Dataset must be 'trashnet', 'trashnet_annotated', or 'taco', got {dataset}")
             
         self.dataset = dataset
         model_name = f'yolov8{model_size}.pt'
         logger.info(f"Loading YOLOv8 model for {dataset} training: {model_name}")
         
-        # Select appropriate results directory
-        self.results_dir = DATASET_DIRS[dataset]
+        # Select appropriate training config and results directory
+        if dataset == 'trashnet':
+            self.training_config = TRASHNET_TRAINING_CONFIG
+            self.results_dir = TRAINED_TRASHNET_DIR
+        elif dataset == 'trashnet_annotated':
+            self.training_config = TRASHNET_ANNOTATED_TRAINING_CONFIG
+            self.results_dir = TRAINED_TRASHNET_ANNOTATED_DIR
+        else:
+            self.training_config = TACO_TRAINING_CONFIG
+            self.results_dir = TRAINED_TACO_DIR
         
         try:
             self.model = YOLO(model_name)
@@ -92,43 +105,32 @@ class TrainedModel:
             raise
     
     def train(self, data_yaml: Path) -> object:
-        """Train the model on specified dataset
+        """
+        Train the model on specified dataset
         
         Args:
-            data_yaml: Path to dataset YAML file
+            data_yaml: Path to dataset configuration file
             
         Returns:
-            YOLO Results object containing training metrics
+            object: YOLOv8 training results
         """
         try:
             logger.info(f"Starting training on {self.dataset}")
             
-            # Check if CUDA is available
-            if torch.cuda.is_available():
-                logger.info(f"Training on GPU: {torch.cuda.get_device_name(0)}")
-            else:
-                logger.warning("CUDA not available, training on CPU")
-            
-            # Train model using config
             results = self.model.train(
                 data=str(data_yaml),
-                epochs=TRAINING_CONFIG['epochs'],
+                epochs=self.training_config['epochs'],
                 imgsz=IMG_SIZE,
-                batch=TRAINING_CONFIG['batch_size'],
-                optimizer=TRAINING_CONFIG['optimizer'],
-                lr0=TRAINING_CONFIG['learning_rate'],
-                weight_decay=TRAINING_CONFIG['weight_decay'],
-                device=TRAINING_CONFIG['device'],
+                batch=self.training_config['batch_size'],
+                optimizer=self.training_config['optimizer'],
+                lr0=self.training_config['learning_rate'],
+                weight_decay=self.training_config['weight_decay'],
+                device=self.training_config['device'],
                 project=str(self.results_dir),
                 name=self.dataset,
-                save_period=TRAINING_CONFIG['save_period'],
+                save_period=self.training_config['save_period'],
                 exist_ok=True,
-                patience=TRAINING_CONFIG['patience'],
-                workers=TRAINING_CONFIG['workers'],
-                resume=TRAINING_CONFIG['resume'],
-                plots=True,  # Enable training plots
-                save=True,  # Save best model
-                val=True    # Run validation during training
+                plots=True  # Enable training plots
             )
             
             logger.info(f"Training completed for {self.dataset}")
@@ -139,19 +141,19 @@ class TrainedModel:
             raise
     
     def predict(self, data_yaml: Path, split: str = 'test') -> object:
-        """Run predictions using the trained model
+        """
+        Run predictions using the trained model
         
         Args:
-            data_yaml: Path to dataset YAML file
-            split: Dataset split to evaluate ('train', 'val', 'test')
+            data_yaml: Path to dataset configuration file
+            split: Dataset split to use (train, val, test)
             
         Returns:
-            YOLO Results object containing evaluation metrics
+            object: YOLOv8 validation results
         """
         try:
             logger.info(f"Running predictions on {self.dataset} {split} set")
             
-            # Use prediction config from config.py
             results = self.model.val(
                 data=str(data_yaml),
                 split=split,
@@ -164,8 +166,7 @@ class TrainedModel:
                 project=str(self.results_dir),
                 name=f"{self.dataset}_predictions",
                 exist_ok=True,
-                plots=PREDICTION_CONFIG['plots'],
-                save_json=PREDICTION_CONFIG['save_json']
+                plots=True  # Enable prediction plots
             )
             
             logger.info(f"Predictions completed for {self.dataset} {split} set")

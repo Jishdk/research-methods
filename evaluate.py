@@ -1,307 +1,169 @@
+# evaluate.py
+
 import logging
-from pathlib import Path
-import json
 import numpy as np
+import pandas as pd
+from pathlib import Path
+from typing import Dict, Any
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Dict, List, Tuple, Optional
-from config import (
-    BASELINE_RESULTS_DIR, TRAINED_RESULTS_DIR, METRICS,
-    PLOT_CONFIG, FIGURE_SIZES, EXAMPLES_PER_CLASS
-)
+from config import *
+from utils import setup_logging
 
-logger = logging.getLogger(__name__)
+logger = setup_logging()
 
 class ModelEvaluator:
-    """Evaluator for object detection models"""
+    """Handles evaluation of baseline model performance"""
     
     def __init__(self):
-        """Initialize model evaluator"""
-        BASELINE_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        TRAINED_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        self.results_dir = BASELINE_RESULTS_DIR
         
-        # Set plot style
-        plt.style.use('seaborn')
-        sns.set_palette(PLOT_CONFIG['color_palette'])
-        plt.rcParams['figure.figsize'] = FIGURE_SIZES['learning_curves']
-        plt.rcParams['font.size'] = PLOT_CONFIG['font_size']
-        
-    def evaluate_baseline(self, results: object, dataset_name: str) -> Dict:
-        """Extract metrics from baseline evaluation
-        
-        Args:
-            results: YOLO Results object from model validation
-            dataset_name: Name of dataset
+    def evaluate_baseline(self, results: Any, dataset: str) -> Dict:
+        """Evaluate baseline model performance on TrashNet dataset only"""
+        if dataset != 'trashnet':
+            logger.info(f"Skipping baseline evaluation for {dataset} (baseline only for TrashNet)")
+            return {}
             
-        Returns:
-            Dictionary containing evaluation metrics
-        """
         try:
-            # Extract metrics
-            metrics = self._extract_metrics(results)
+            # Extract metrics from results
+            metrics = {
+                'mAP50': results.maps[0],  # mAP at IoU=0.50
+                'mAP50-95': results.maps[1],  # mAP at IoU=0.50:0.95
+                'precision': results.results_dict['metrics/precision(B)'],
+                'recall': results.results_dict['metrics/recall(B)']
+            }
             
-            # Create dataset-specific directory
-            dataset_dir = BASELINE_RESULTS_DIR / dataset_name
-            dataset_dir.mkdir(parents=True, exist_ok=True)
+            # Save baseline metrics
+            metrics_df = pd.DataFrame([metrics])
+            metrics_df.to_csv(self.results_dir / dataset / "baseline_metrics.csv", index=False)
             
-            # Save metrics
-            self._save_metrics(metrics, dataset_dir / "metrics.json")
-            
-            # Save confusion matrix if available
-            if hasattr(results, 'confusion_matrix'):
-                self._save_confusion_matrix(results, dataset_dir)
-                self._plot_confusion_matrix(results, dataset_dir)
-            
-            # Plot precision-recall curves
-            self._plot_precision_recall_curves(results, dataset_dir)
+            # Create visualization
+            self._plot_baseline_metrics(metrics, dataset)
             
             return metrics
             
         except Exception as e:
-            logger.error(f"Error evaluating {dataset_name} baseline: {e}")
-            return {'error': str(e)}
-            
-    def get_metrics_summary(self, dataset_name: str) -> Dict:
-        """Get summary of metrics for a dataset"""
-        metrics_file = BASELINE_RESULTS_DIR / dataset_name / "metrics.json"
-        try:
-            if metrics_file.exists():
-                with open(metrics_file, 'r') as f:
-                    return json.load(f)
+            logger.error(f"Error evaluating baseline model: {e}")
             return {}
-        except Exception as e:
-            logger.error(f"Error reading metrics for {dataset_name}: {e}")
-            return {'error': str(e)}
-    
-    def _extract_metrics(self, results: object) -> Dict:
-        """Extract all relevant metrics from results object"""
-        metrics = {
-            'mAP50': float(results.box.map50),
-            'mAP50-95': float(results.box.map),
-            'precision': float(results.box.mp),
-            'recall': float(results.box.mr)
-        }
+            
+    def _plot_baseline_metrics(self, metrics: Dict, dataset: str) -> None:
+        """Create bar plot of baseline metrics"""
+        plt.figure(figsize=FIGURE_SIZES['class_performance'])
         
-        # Calculate F1 score
-        metrics['f1'] = 2 * (metrics['precision'] * metrics['recall']) / (
-            metrics['precision'] + metrics['recall']
-        ) if (metrics['precision'] + metrics['recall']) > 0 else 0
+        # Create bar plot
+        metrics_values = [metrics[m] for m in METRICS]
+        plt.bar(METRICS, metrics_values)
         
-        return metrics
-    
-    def _save_metrics(self, metrics: Dict, file_path: Path) -> None:
-        """Save metrics to JSON file"""
-        with open(file_path, 'w') as f:
-            json.dump(metrics, f, indent=4)
-        logger.info(f"Saved metrics to {file_path}")
-    
-    def _save_confusion_matrix(self, results: object, output_dir: Path) -> None:
-        """Save confusion matrix data"""
-        matrix_data = {
-            'matrix': results.confusion_matrix.matrix.tolist(),
-            'names': results.names
-        }
-        matrix_file = output_dir / "confusion_matrix.json"
-        with open(matrix_file, 'w') as f:
-            json.dump(matrix_data, f, indent=4)
-    
-    def _plot_confusion_matrix(self, results: object, output_dir: Path) -> None:
-        """Plot and save confusion matrix"""
-        plt.figure(figsize=FIGURE_SIZES['confusion_matrix'])
-        sns.heatmap(
-            results.confusion_matrix.matrix,
-            annot=True,
-            fmt='d',
-            cmap='Blues',
-            xticklabels=results.names,
-            yticklabels=results.names
-        )
-        plt.title('Confusion Matrix')
-        plt.xlabel('Predicted')
-        plt.ylabel('True')
+        plt.title(f'Baseline Model Performance on {dataset.capitalize()}')
+        plt.ylabel('Score')
+        plt.ylim(0, 1)
+        
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45)
+        
+        # Save plot
         plt.tight_layout()
-        plt.savefig(output_dir / 'confusion_matrix.png', dpi=PLOT_CONFIG['dpi'])
-        plt.close()
-    
-    def _plot_precision_recall_curves(self, results: object, output_dir: Path) -> None:
-        """Plot precision-recall curves"""
-        plt.figure(figsize=FIGURE_SIZES['precision_recall'])
-        
-        if hasattr(results, 'pr_curve'):
-            for i, class_name in enumerate(results.names):
-                precision = results.pr_curve[i, :, 0]
-                recall = results.pr_curve[i, :, 1]
-                plt.plot(recall, precision, linewidth=PLOT_CONFIG['line_width'],
-                        label=f'{class_name} (AP={results.box.ap50[i]:.2f})')
-        
-        plt.grid(PLOT_CONFIG['grid'])
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.title('Precision-Recall Curves')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.tight_layout()
-        plt.savefig(output_dir / 'precision_recall_curves.png', dpi=PLOT_CONFIG['dpi'])
+        plt.savefig(self.results_dir / dataset / "baseline_metrics.png")
         plt.close()
 
 class TrainingEvaluator:
-    """Evaluator for trained models"""
+    """Handles evaluation of training performance"""
     
     def __init__(self):
-        """Initialize training evaluator"""
         self.results_dir = TRAINED_RESULTS_DIR
-        self.results_dir.mkdir(parents=True, exist_ok=True)
-    
-    def evaluate_training(self, results: object, dataset_name: str) -> Dict:
-        """Evaluate training results and create visualizations
         
-        Args:
-            results: YOLO training Results object
-            dataset_name: Name of dataset
-            
-        Returns:
-            Dictionary containing evaluation metrics
-        """
+    def evaluate_training(self, results: Any, dataset: str) -> Dict:
+        """Evaluate training performance and create visualizations"""
         try:
-            # Extract training metrics
+            # Extract training history
             metrics = {
-                'mAP50': float(results.box.map50),
-                'mAP50-95': float(results.box.map),
-                'precision': float(results.box.mp),
-                'recall': float(results.box.mr),
-                'f1': 2 * float(results.box.mp) * float(results.box.mr) / (
-                    float(results.box.mp) + float(results.box.mr)
-                ) if (float(results.box.mp) + float(results.box.mr)) > 0 else 0,
-                'training_epochs': len(results.epoch) if hasattr(results, 'epoch') else None,
-                'training_time': results.t if hasattr(results, 't') else None,
-                'best_epoch': results.best_epoch if hasattr(results, 'best_epoch') else None
+                'epoch': list(range(1, len(results.metrics['train/box_loss']) + 1)),
+                'train_loss': results.metrics['train/box_loss'],
+                'val_loss': results.metrics['val/box_loss'],
+                'mAP50': results.metrics['metrics/mAP50(B)'],
+                'mAP50-95': results.metrics['metrics/mAP50-95(B)'],
+                'precision': results.metrics['metrics/precision(B)'],
+                'recall': results.metrics['metrics/recall(B)']
             }
             
-            # Save metrics
-            metrics_dir = self.results_dir / dataset_name
-            metrics_dir.mkdir(parents=True, exist_ok=True)
-            metrics_file = metrics_dir / "training_metrics.json"
+            # Save training metrics
+            metrics_df = pd.DataFrame(metrics)
+            save_dir = self._get_save_dir(dataset)
+            metrics_df.to_csv(save_dir / "training_metrics.csv", index=False)
             
-            with open(metrics_file, 'w') as f:
-                json.dump(metrics, f, indent=4)
-            
-            # Plot training curves if epoch data is available
-            if hasattr(results, 'epoch'):
-                self._plot_training_history(results, metrics_dir)
-            
-            logger.info(f"Saved {dataset_name} training metrics to {metrics_file}")
+            # Create training visualizations
+            self._plot_training_curves(metrics, dataset)
+            self._plot_metrics_evolution(metrics, dataset)
             
             return metrics
             
         except Exception as e:
-            logger.error(f"Error evaluating {dataset_name} training: {e}")
-            return {'error': str(e)}
-    
-    def evaluate_predictions(self, results: object, dataset_name: str) -> Dict:
-        """Evaluate model predictions and create visualizations"""
+            logger.error(f"Error evaluating training: {e}")
+            return {}
+            
+    def evaluate_predictions(self, results: Any, dataset: str) -> Dict:
+        """Evaluate model predictions on test set"""
         try:
-            # Extract prediction metrics
             metrics = {
-                'mAP50': float(results.box.map50),
-                'mAP50-95': float(results.box.map),
-                'precision': float(results.box.mp),
-                'recall': float(results.box.mr)
+                'mAP50': results.maps[0],
+                'mAP50-95': results.maps[1],
+                'precision': results.results_dict['metrics/precision(B)'],
+                'recall': results.results_dict['metrics/recall(B)']
             }
             
-            # Calculate F1 score
-            metrics['f1'] = 2 * (metrics['precision'] * metrics['recall']) / (
-                metrics['precision'] + metrics['recall']
-            ) if (metrics['precision'] + metrics['recall']) > 0 else 0
-            
-            # Save metrics
-            metrics_dir = self.results_dir / dataset_name
-            metrics_dir.mkdir(parents=True, exist_ok=True)
-            metrics_file = metrics_dir / "prediction_metrics.json"
-            
-            with open(metrics_file, 'w') as f:
-                json.dump(metrics, f, indent=4)
-            
-            # Create visualizations
-            if hasattr(results, 'confusion_matrix'):
-                self._plot_confusion_matrix(results, metrics_dir)
-            self._plot_precision_recall_curves(results, metrics_dir)
-            
-            logger.info(f"Saved {dataset_name} prediction metrics to {metrics_file}")
+            # Save test metrics
+            save_dir = self._get_save_dir(dataset)
+            pd.DataFrame([metrics]).to_csv(save_dir / "test_metrics.csv", index=False)
             
             return metrics
             
         except Exception as e:
             logger.error(f"Error evaluating predictions: {e}")
-            return {'error': str(e)}
-    
-    def _plot_training_history(self, results: object, output_dir: Path) -> None:
-        """Plot training history curves"""
-        epochs = range(1, len(results.epoch) + 1)
-        
-        # Plot training and validation loss
+            return {}
+            
+    def _get_save_dir(self, dataset: str) -> Path:
+        """Get appropriate save directory based on dataset"""
+        if dataset == 'trashnet':
+            return TRAINED_TRASHNET_DIR
+        elif dataset == 'trashnet_annotated':
+            return TRAINED_TRASHNET_ANNOTATED_DIR
+        else:
+            return TRAINED_TACO_DIR
+            
+    def _plot_training_curves(self, metrics: Dict, dataset: str) -> None:
+        """Plot training and validation loss curves"""
         plt.figure(figsize=FIGURE_SIZES['learning_curves'])
-        plt.plot(epochs, results.loss, 'b-', label='Training Loss', 
-                linewidth=PLOT_CONFIG['line_width'])
-        if hasattr(results, 'val_loss'):
-            plt.plot(epochs, results.val_loss, 'r-', label='Validation Loss',
-                    linewidth=PLOT_CONFIG['line_width'])
-        plt.grid(PLOT_CONFIG['grid'])
+        
+        plt.plot(metrics['epoch'], metrics['train_loss'], label='Training Loss')
+        plt.plot(metrics['epoch'], metrics['val_loss'], label='Validation Loss')
+        
+        plt.title(f'Training Curves - {dataset.capitalize()}')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
-        plt.title('Training and Validation Loss')
         plt.legend()
+        
+        # Save plot
+        save_dir = self._get_save_dir(dataset)
         plt.tight_layout()
-        plt.savefig(output_dir / 'loss_curves.png', dpi=PLOT_CONFIG['dpi'])
+        plt.savefig(save_dir / "training_curves.png")
         plt.close()
         
-        # Plot metrics
+    def _plot_metrics_evolution(self, metrics: Dict, dataset: str) -> None:
+        """Plot evolution of evaluation metrics during training"""
         plt.figure(figsize=FIGURE_SIZES['learning_curves'])
-        for metric in METRICS:
-            if hasattr(results, metric.lower()):
-                values = getattr(results, metric.lower())
-                plt.plot(epochs, values, label=metric, linewidth=PLOT_CONFIG['line_width'])
-        plt.grid(PLOT_CONFIG['grid'])
+        
+        for metric in ['mAP50', 'precision', 'recall']:
+            if metric in metrics:
+                plt.plot(metrics['epoch'], metrics[metric], label=metric)
+        
+        plt.title(f'Metrics Evolution - {dataset.capitalize()}')
         plt.xlabel('Epoch')
-        plt.ylabel('Value')
-        plt.title('Training Metrics')
+        plt.ylabel('Score')
         plt.legend()
-        plt.tight_layout()
-        plt.savefig(output_dir / 'metrics_curves.png', dpi=PLOT_CONFIG['dpi'])
-        plt.close()
-    
-    def _plot_confusion_matrix(self, results: object, output_dir: Path) -> None:
-        """Plot confusion matrix"""
-        plt.figure(figsize=FIGURE_SIZES['confusion_matrix'])
-        sns.heatmap(
-            results.confusion_matrix.matrix,
-            annot=True,
-            fmt='d',
-            cmap='Blues',
-            xticklabels=results.names,
-            yticklabels=results.names
-        )
-        plt.title('Confusion Matrix')
-        plt.xlabel('Predicted')
-        plt.ylabel('True')
-        plt.tight_layout()
-        plt.savefig(output_dir / 'confusion_matrix.png', dpi=PLOT_CONFIG['dpi'])
-        plt.close()
-    
-    def _plot_precision_recall_curves(self, results: object, output_dir: Path) -> None:
-        """Plot precision-recall curves"""
-        plt.figure(figsize=FIGURE_SIZES['precision_recall'])
+        plt.ylim(0, 1)
         
-        if hasattr(results, 'pr_curve'):
-            for i, class_name in enumerate(results.names):
-                precision = results.pr_curve[i, :, 0]
-                recall = results.pr_curve[i, :, 1]
-                plt.plot(recall, precision, linewidth=PLOT_CONFIG['line_width'],
-                        label=f'{class_name} (AP={results.box.ap50[i]:.2f})')
-        
-        plt.grid(PLOT_CONFIG['grid'])
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.title('Precision-Recall Curves')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        # Save plot
+        save_dir = self._get_save_dir(dataset)
         plt.tight_layout()
-        plt.savefig(output_dir / 'precision_recall_curves.png', dpi=PLOT_CONFIG['dpi'])
+        plt.savefig(save_dir / "metrics_evolution.png")
         plt.close()
