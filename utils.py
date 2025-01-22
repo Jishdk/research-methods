@@ -14,6 +14,8 @@ from typing import Dict, List, Tuple
 from sklearn.model_selection import KFold
 from config import *
 
+## Set up 
+
 def setup_logging():
     """
     Set up logging configuration
@@ -49,6 +51,8 @@ def setup_directories(base_dir: Path) -> Tuple[Path, Path, Path]:
         split_dirs.append(split_dir)
     
     return tuple(split_dirs)
+
+## Image processing 
 
 def resize_image(image: np.ndarray, target_size: Tuple[int, int]) -> np.ndarray:
     """
@@ -151,6 +155,9 @@ def count_images_per_class(labels_dir: Path) -> Dict[int, int]:
             logger.error(f"Error reading label file {label_file}: {e}")
     return class_counts
 
+
+## Save and Log 
+
 def save_dataset_metadata(dataset_dir: Path, dataset_type: str) -> None:
     """
     Save comprehensive dataset statistics
@@ -194,6 +201,8 @@ def log_dataset_stats(dataset_dir: Path, dataset_type: str) -> None:
     logger.info(f"Total images: {total_images}")
     for split, count in stats.items():
         logger.info(f"{split} split: {count} images")
+
+## Cross val
 
 def create_cross_validation_folds(dataset_dir: Path, dataset_type: str, cv_folds: int) -> None:
     """
@@ -257,6 +266,8 @@ def create_cross_validation_folds(dataset_dir: Path, dataset_type: str, cv_folds
         create_yaml_file(fold_dir / "dataset.yaml", yaml_data)
     
     logger.info(f"Created {cv_folds} cross-validation folds in {cv_dir}")
+
+## Model training 
 
 def load_training_config(dataset_type: str) -> Dict:
     """
