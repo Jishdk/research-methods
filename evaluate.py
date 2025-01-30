@@ -1,6 +1,7 @@
 # evaluate.py
 
 import logging
+import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -16,38 +17,83 @@ class ModelEvaluator:
     """Handles evaluation of baseline model performance"""
     
     def __init__(self):
+        """Initialize evaluator with baseline results directory"""
         self.results_dir = BASELINE_RESULTS_DIR
         
     def evaluate_baseline(self, results: Any, dataset: str) -> Dict:
-        """Evaluate baseline model performance on TrashNet dataset only"""
+        """Evaluate baseline model performance on TrashNet dataset only
+        
+        Args:
+            results: YOLO Results object from validation
+            dataset: Name of dataset (only 'trashnet' supported for baseline)
+            
+        Returns:
+            Dict containing evaluation metrics
+        """
         if dataset != 'trashnet':
             logger.info(f"Skipping baseline evaluation for {dataset} (baseline only for TrashNet)")
             return {}
             
         try:
-            # Extract metrics from results
+            # Extract comprehensive metrics including per-class performance
             metrics = {
-                'mAP50': results.maps[0],  # mAP at IoU=0.50
-                'mAP50-95': results.maps[1],  # mAP at IoU=0.50:0.95
-                'precision': results.results_dict['metrics/precision(B)'],
-                'recall': results.results_dict['metrics/recall(B)']
+                'dataset': dataset,
+                'model_type': 'baseline',
+                'overall': {
+                    'mAP50': float(results.maps[0]),
+                    'mAP50-95': float(results.maps[1]),
+                    'precision': float(results.results_dict['metrics/precision(B)']),
+                    'recall': float(results.results_dict['metrics/recall(B)'])
+                },
+                'per_class': {}
             }
             
-            # Save baseline metrics
-            metrics_df = pd.DataFrame([metrics])
-            metrics_df.to_csv(self.results_dir / dataset / "baseline_metrics.csv", index=False)
+            # Add per-class metrics if available
+            if hasattr(results, 'names') and hasattr(results, 'metrics'):
+                for i, name in enumerate(results.names):
+                    metrics['per_class'][name] = {
+                        'precision': float(results.metrics.precision[i]),
+                        'recall': float(results.metrics.recall[i]),
+                        'mAP50': float(results.metrics.map50[i])
+                    }
+            
+            # Save metrics in both JSON and CSV formats
+            self._save_metrics(metrics, dataset)
             
             # Create visualization
-            self._plot_baseline_metrics(metrics, dataset)
+            self._plot_baseline_metrics(metrics['overall'], dataset)
             
             return metrics
             
         except Exception as e:
             logger.error(f"Error evaluating baseline model: {e}")
             return {}
+    
+    def _save_metrics(self, metrics: Dict, dataset: str) -> None:
+        """Save metrics in both JSON and CSV formats
+        
+        Args:
+            metrics: Dictionary containing evaluation metrics
+            dataset: Name of dataset being evaluated
+        """
+        save_dir = self.results_dir / dataset
+        
+        # Save detailed metrics as JSON
+        json_file = save_dir / "baseline_metrics.json"
+        with open(json_file, 'w') as f:
+            json.dump(metrics, f, indent=4)
+            
+        # Save summary metrics as CSV for compatibility
+        csv_file = save_dir / "baseline_metrics.csv"
+        pd.DataFrame([metrics['overall']]).to_csv(csv_file, index=False)
             
     def _plot_baseline_metrics(self, metrics: Dict, dataset: str) -> None:
-        """Create bar plot of baseline metrics"""
+        """Create visualization of baseline metrics
+        
+        Args:
+            metrics: Dictionary of overall metrics to plot
+            dataset: Name of dataset being evaluated
+        """
         plt.figure(figsize=FIGURE_SIZES['class_performance'])
         
         # Create bar plot
@@ -67,33 +113,58 @@ class ModelEvaluator:
         plt.close()
 
 class TrainingEvaluator:
-    """Handles evaluation of training performance"""
+    """Handles evaluation of trained model performance"""
     
     def __init__(self):
+        """Initialize evaluator with results directory for trained models"""
         self.results_dir = TRAINED_RESULTS_DIR
         
     def evaluate_training(self, results: Any, dataset: str) -> Dict:
-        """Evaluate training performance and create visualizations"""
+        """Evaluate training performance and create visualizations
+        
+        Args:
+            results: YOLO Results object from training
+            dataset: Name of dataset used for training
+            
+        Returns:
+            Dict containing training metrics
+        """
         try:
-            # Extract training history
+            # Extract comprehensive training metrics
             metrics = {
-                'epoch': list(range(1, len(results.metrics['train/box_loss']) + 1)),
-                'train_loss': results.metrics['train/box_loss'],
-                'val_loss': results.metrics['val/box_loss'],
-                'mAP50': results.metrics['metrics/mAP50(B)'],
-                'mAP50-95': results.metrics['metrics/mAP50-95(B)'],
-                'precision': results.metrics['metrics/precision(B)'],
-                'recall': results.metrics['metrics/recall(B)']
+                'dataset': dataset,
+                'training_history': {
+                    'epoch': list(range(1, len(results.metrics['train/box_loss']) + 1)),
+                    'train_loss': results.metrics['train/box_loss'],
+                    'val_loss': results.metrics['val/box_loss'],
+                    'mAP50': results.metrics['metrics/mAP50(B)'],
+                    'mAP50-95': results.metrics['metrics/mAP50-95(B)'],
+                    'precision': results.metrics['metrics/precision(B)'],
+                    'recall': results.metrics['metrics/recall(B)']
+                },
+                'final_metrics': {
+                    'mAP50': float(results.metrics['metrics/mAP50(B)'][-1]),
+                    'mAP50-95': float(results.metrics['metrics/mAP50-95(B)'][-1]),
+                    'precision': float(results.metrics['metrics/precision(B)'][-1]),
+                    'recall': float(results.metrics['metrics/recall(B)'][-1])
+                }
             }
             
-            # Save training metrics
-            metrics_df = pd.DataFrame(metrics)
+            # Save both detailed JSON and summary CSV
             save_dir = self._get_save_dir(dataset)
-            metrics_df.to_csv(save_dir / "training_metrics.csv", index=False)
+            
+            # Save JSON with full training history
+            json_file = save_dir / "training_metrics.json"
+            with open(json_file, 'w') as f:
+                json.dump(metrics, f, indent=4)
+                
+            # Save CSV with final metrics for compatibility
+            csv_file = save_dir / "training_metrics.csv"
+            pd.DataFrame([metrics['final_metrics']]).to_csv(csv_file, index=False)
             
             # Create training visualizations
-            self._plot_training_curves(metrics, dataset)
-            self._plot_metrics_evolution(metrics, dataset)
+            self._plot_training_curves(metrics['training_history'], dataset)
+            self._plot_metrics_evolution(metrics['training_history'], dataset)
             
             return metrics
             
@@ -102,18 +173,50 @@ class TrainingEvaluator:
             return {}
             
     def evaluate_predictions(self, results: Any, dataset: str) -> Dict:
-        """Evaluate model predictions on test set"""
+        """Evaluate model predictions on test set
+        
+        Args:
+            results: YOLO Results object from validation
+            dataset: Name of dataset being evaluated
+            
+        Returns:
+            Dict containing prediction metrics
+        """
         try:
+            # Extract comprehensive metrics
             metrics = {
-                'mAP50': results.maps[0],
-                'mAP50-95': results.maps[1],
-                'precision': results.results_dict['metrics/precision(B)'],
-                'recall': results.results_dict['metrics/recall(B)']
+                'dataset': dataset,
+                'overall': {
+                    'mAP50': float(results.maps[0]),
+                    'mAP50-95': float(results.maps[1]),
+                    'precision': float(results.results_dict['metrics/precision(B)']),
+                    'recall': float(results.results_dict['metrics/recall(B)'])
+                },
+                'per_class': {}
             }
             
-            # Save test metrics
+            # Add per-class metrics if available
+            if hasattr(results, 'names') and hasattr(results, 'metrics'):
+                for i, name in enumerate(results.names):
+                    metrics['per_class'][name] = {
+                        'precision': float(results.metrics.precision[i]),
+                        'recall': float(results.metrics.recall[i]),
+                        'mAP50': float(results.metrics.map50[i])
+                    }
+            
+            # Save both JSON and CSV formats
             save_dir = self._get_save_dir(dataset)
-            pd.DataFrame([metrics]).to_csv(save_dir / "test_metrics.csv", index=False)
+            
+            # Save detailed metrics as JSON
+            json_file = save_dir / "prediction_metrics.json"
+            with open(json_file, 'w') as f:
+                json.dump(metrics, f, indent=4)
+                
+            # Save summary metrics as CSV for compatibility
+            csv_file = save_dir / "test_metrics.csv"
+            pd.DataFrame([metrics['overall']]).to_csv(csv_file, index=False)
+            
+            logger.info(f"Saved prediction metrics for {dataset}")
             
             return metrics
             
@@ -122,16 +225,28 @@ class TrainingEvaluator:
             return {}
             
     def _get_save_dir(self, dataset: str) -> Path:
-        """Get appropriate save directory based on dataset"""
+        """Get appropriate save directory for each dataset
+        
+        Args:
+            dataset: Name of dataset
+            
+        Returns:
+            Path to dataset-specific results directory
+        """
         if dataset == 'trashnet':
             return TRAINED_TRASHNET_DIR
         elif dataset == 'trashnet_annotated':
             return TRAINED_TRASHNET_ANNOTATED_DIR
-        else:
+        else:  # taco
             return TRAINED_TACO_DIR
             
     def _plot_training_curves(self, metrics: Dict, dataset: str) -> None:
-        """Plot training and validation loss curves"""
+        """Plot training and validation loss curves
+        
+        Args:
+            metrics: Dictionary containing training metrics history
+            dataset: Name of dataset being evaluated
+        """
         plt.figure(figsize=FIGURE_SIZES['learning_curves'])
         
         plt.plot(metrics['epoch'], metrics['train_loss'], label='Training Loss')
@@ -149,7 +264,12 @@ class TrainingEvaluator:
         plt.close()
         
     def _plot_metrics_evolution(self, metrics: Dict, dataset: str) -> None:
-        """Plot evolution of evaluation metrics during training"""
+        """Plot evolution of evaluation metrics during training
+        
+        Args:
+            metrics: Dictionary containing training metrics history
+            dataset: Name of dataset being evaluated
+        """
         plt.figure(figsize=FIGURE_SIZES['learning_curves'])
         
         for metric in ['mAP50', 'precision', 'recall']:
